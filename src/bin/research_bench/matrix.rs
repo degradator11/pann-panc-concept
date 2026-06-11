@@ -84,12 +84,16 @@ pub fn run_image_matrix(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         dataset: "image-folder".to_string(),
         report_path: args.out_path.clone(),
         summary_report_path: None,
+        top_report_path: None,
         summaries: summarize_rows(&rows),
+        top_rows: top_rows(&rows, args.matrix_top),
         rows,
     };
 
     if let Some(out_path) = &args.out_path {
-        report.summary_report_path = save_matrix_report(out_path, &report, args.format)?;
+        let paths = save_matrix_report(out_path, &report, args.format)?;
+        report.summary_report_path = paths.summary_report_path;
+        report.top_report_path = paths.top_report_path;
         report.report_path = Some(out_path.clone());
     }
 
@@ -246,11 +250,16 @@ fn summary_from_group(key: SummaryKey, rows: &[&MatrixRow]) -> MatrixSummary {
     }
 }
 
+struct MatrixReportPaths {
+    summary_report_path: Option<String>,
+    top_report_path: Option<String>,
+}
+
 fn save_matrix_report(
     out_path: &str,
     report: &MatrixReport,
     format: OutputFormat,
-) -> Result<Option<String>, Box<dyn Error>> {
+) -> Result<MatrixReportPaths, Box<dyn Error>> {
     let path = Path::new(out_path);
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
@@ -266,10 +275,51 @@ fn save_matrix_report(
             let summary_path = summary_csv_path(path);
             let summary_file = fs::File::create(&summary_path)?;
             write_matrix_summaries_csv(summary_file, &report.summaries)?;
-            return Ok(Some(summary_path.display().to_string()));
+            let top_report_path = if report.top_rows.is_empty() {
+                None
+            } else {
+                let top_path = top_csv_path(path);
+                let top_file = fs::File::create(&top_path)?;
+                write_matrix_rows_csv(top_file, &report.top_rows)?;
+                Some(top_path.display().to_string())
+            };
+            return Ok(MatrixReportPaths {
+                summary_report_path: Some(summary_path.display().to_string()),
+                top_report_path,
+            });
         }
     }
-    Ok(None)
+    Ok(MatrixReportPaths {
+        summary_report_path: None,
+        top_report_path: None,
+    })
+}
+
+fn top_rows(rows: &[MatrixRow], limit: usize) -> Vec<MatrixRow> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let mut rows = rows.to_vec();
+    rows.sort_by(|left, right| {
+        right
+            .test_accuracy
+            .total_cmp(&left.test_accuracy)
+            .then_with(|| {
+                right
+                    .worst_class_accuracy
+                    .total_cmp(&left.worst_class_accuracy)
+            })
+            .then_with(|| left.overfit_gap.total_cmp(&right.overfit_gap))
+            .then_with(|| left.model.cmp(&right.model))
+            .then_with(|| left.image_features.cmp(&right.image_features))
+            .then_with(|| left.image_resize.cmp(&right.image_resize))
+            .then_with(|| left.correction_mode.cmp(&right.correction_mode))
+            .then_with(|| left.interval_count.cmp(&right.interval_count))
+            .then_with(|| left.seed.cmp(&right.seed))
+    });
+    rows.truncate(limit);
+    rows
 }
 
 fn pooled_per_class_accuracy(rows: &[&MatrixRow]) -> Vec<PerClassAccuracy> {
@@ -312,6 +362,12 @@ fn summary_csv_path(path: &Path) -> PathBuf {
     let mut summary_path = path.to_path_buf();
     summary_path.set_extension("summary.csv");
     summary_path
+}
+
+fn top_csv_path(path: &Path) -> PathBuf {
+    let mut top_path = path.to_path_buf();
+    top_path.set_extension("top.csv");
+    top_path
 }
 
 fn matrix_models(args: &Args) -> Vec<MatrixModel> {

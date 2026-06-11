@@ -341,10 +341,13 @@ Notes:
 - `--matrix-correction-modes` adds PANN correction/update modes to the sweep.
   PANC-like comparison ignores this option because it does not use PANN
   correction rules.
+- `--matrix-top 10` writes the best N matrix rows sorted by eval accuracy,
+  worst-class accuracy, and lower overfit gap.
 - CSV output contains per-run rows. When `--out reports\name.csv` is used, the
-  command also writes `reports\name.summary.csv`.
+  command also writes `reports\name.summary.csv`; with `--matrix-top`, it also
+  writes `reports\name.top.csv`.
 - JSON output contains per-run rows plus grouped summaries with mean/min/max
-  accuracy.
+  accuracy and optional `top_rows`.
 - Matrix rows include per-class accuracy, confusion matrix, worst class, most
   common confusion, and train-vs-eval overfit gap.
 - Matrix summaries include pooled per-class accuracy, worst mean class, best
@@ -367,6 +370,12 @@ Correction-mode matrix:
 
 ```powershell
 cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-correction-matrix.csv --format csv --matrix-models pann --matrix-features rich --matrix-image-sizes 64 --matrix-intervals 12 --matrix-seeds 2 --matrix-resize-modes center-crop --matrix-correction-modes difference-ls,patent-proportional,ratio --epochs 12
+```
+
+Top-five matrix report:
+
+```powershell
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann --matrix-features rich --matrix-image-sizes 64 --matrix-intervals 8,12 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop --matrix-top 5 --epochs 12
 ```
 
 On the short Cats/Dogs dataset, the focused correction-mode smoke run found

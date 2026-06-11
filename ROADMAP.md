@@ -270,6 +270,8 @@ Implemented in the first pass:
   row CSV
 - `image-matrix` can sweep PANN correction modes with
   `--matrix-correction-modes`
+- `image-matrix` can write sorted top-N rows with `--matrix-top`, plus a
+  sibling `*.top.csv` file for CSV runs
 - artifact eval can write static debug reports:
   - `index.html`
   - `config.json`
@@ -345,7 +347,6 @@ least-squares difference as the default image benchmark mode.
 
 Planned benchmark improvements:
 
-- add optional top-N report sorting
 - add debug-report support to in-memory folder benchmarks, not only artifact
   evaluation
 

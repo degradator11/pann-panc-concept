@@ -122,8 +122,10 @@ pub struct MatrixReport {
     pub dataset: String,
     pub report_path: Option<String>,
     pub summary_report_path: Option<String>,
+    pub top_report_path: Option<String>,
     pub rows: Vec<MatrixRow>,
     pub summaries: Vec<MatrixSummary>,
+    pub top_rows: Vec<MatrixRow>,
 }
 
 #[derive(Debug, Clone, Serialize)]

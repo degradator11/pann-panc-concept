@@ -31,6 +31,7 @@ pub struct Args {
     pub matrix_seeds: Vec<u64>,
     pub matrix_resize_modes: Vec<ImageResizeMode>,
     pub matrix_correction_modes: Vec<CorrectionMode>,
+    pub matrix_top: usize,
     pub debug_out_path: Option<String>,
     pub debug_train_data_path: Option<String>,
     pub debug_limit: usize,
@@ -70,7 +71,7 @@ impl DebugSamples {
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich] [--image-resize stretch|center-crop|letterbox] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined,rich] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich] [--image-resize stretch|center-crop|letterbox] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined,rich] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n]",
     )?;
 
     let mut args = Args {
@@ -99,6 +100,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         matrix_seeds: Vec::new(),
         matrix_resize_modes: Vec::new(),
         matrix_correction_modes: Vec::new(),
+        matrix_top: 0,
         debug_out_path: None,
         debug_train_data_path: None,
         debug_limit: 50,
@@ -227,6 +229,12 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     &raw.next()
                         .ok_or("--matrix-correction-modes requires a value")?,
                 )?;
+            }
+            "--matrix-top" => {
+                args.matrix_top = raw
+                    .next()
+                    .ok_or("--matrix-top requires a value")?
+                    .parse::<usize>()?;
             }
             "--debug" | "--debug-out" => {
                 args.debug_out_path = Some(raw.next().ok_or("--debug-out requires a value")?);
