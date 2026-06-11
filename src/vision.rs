@@ -58,6 +58,7 @@ impl ImageVectorConfig {
             ImageFeatureMode::RichHog => features::RICH_HOG_LEN,
             ImageFeatureMode::RichTexture => features::RICH_TEXTURE_LEN,
             ImageFeatureMode::RichEdge => features::RICH_EDGE_LEN,
+            ImageFeatureMode::RichLayout => features::RICH_LAYOUT_LEN,
         }
     }
 }
@@ -74,6 +75,7 @@ pub enum ImageFeatureMode {
     RichHog,
     RichTexture,
     RichEdge,
+    RichLayout,
 }
 
 impl ImageFeatureMode {
@@ -89,6 +91,7 @@ impl ImageFeatureMode {
             Self::RichHog => "rich-hog",
             Self::RichTexture => "rich-texture",
             Self::RichEdge => "rich-edge",
+            Self::RichLayout => "rich-layout",
         }
     }
 }
@@ -110,8 +113,11 @@ impl FromStr for ImageFeatureMode {
             "rich-hog" | "rich_hog" | "rich-block-hog" | "rich-blockhog" => Ok(Self::RichHog),
             "rich-texture" | "rich_texture" | "rich-lbp" | "rich_lbp" => Ok(Self::RichTexture),
             "rich-edge" | "rich_edges" | "rich-edge-density" | "rich_edge" => Ok(Self::RichEdge),
+            "rich-layout" | "rich_layout" | "rich-symmetry" | "rich_symmetry" => {
+                Ok(Self::RichLayout)
+            }
             other => Err(format!(
-                "invalid image feature mode {other:?}; expected pixels, color, hog, combined, rich, rich-spatial, rich-normalized, rich-hog, rich-texture, or rich-edge"
+                "invalid image feature mode {other:?}; expected pixels, color, hog, combined, rich, rich-spatial, rich-normalized, rich-hog, rich-texture, rich-edge, or rich-layout"
             )),
         }
     }
@@ -506,6 +512,15 @@ mod tests {
 
         assert_eq!(dataset.samples[0].len(), config.vector_len());
         assert_eq!(config.vector_len(), 1458);
+    }
+
+    #[test]
+    fn rich_layout_feature_mode_has_expected_length() {
+        let config = ImageVectorConfig::new(8, 8).with_feature_mode(ImageFeatureMode::RichLayout);
+        let dataset = synthetic_image_dataset(config, 1, 9).unwrap();
+
+        assert_eq!(dataset.samples[0].len(), config.vector_len());
+        assert_eq!(config.vector_len(), 1426);
     }
 
     #[test]

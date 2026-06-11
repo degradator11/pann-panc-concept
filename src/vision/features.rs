@@ -19,6 +19,7 @@ pub(super) const HOG_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HOG_BINS;
 pub(super) const HOG_BLOCK_LEN: usize = HOG_BLOCK_GRID * HOG_BLOCK_GRID * 4 * HOG_BINS;
 pub(super) const LBP_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * LBP_BINS;
 pub(super) const EDGE_DENSITY_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * 3;
+pub(super) const LAYOUT_LEN: usize = 16;
 pub(super) const SPATIAL_HSV_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HSV_HISTOGRAM_LEN;
 pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN + HOG_LEN;
 pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
@@ -27,6 +28,7 @@ pub(super) const RICH_NORMALIZED_LEN: usize = RICH_SPATIAL_LEN + NORMALIZED_COLO
 pub(super) const RICH_HOG_LEN: usize = RICH_NORMALIZED_LEN + HOG_BLOCK_LEN;
 pub(super) const RICH_TEXTURE_LEN: usize = RICH_HOG_LEN + LBP_LEN;
 pub(super) const RICH_EDGE_LEN: usize = RICH_TEXTURE_LEN + EDGE_DENSITY_LEN;
+pub(super) const RICH_LAYOUT_LEN: usize = RICH_TEXTURE_LEN + LAYOUT_LEN;
 
 pub(super) struct ImageProcessingStep {
     pub name: &'static str,
@@ -62,7 +64,8 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
         | ImageFeatureMode::RichNormalized
         | ImageFeatureMode::RichHog
         | ImageFeatureMode::RichTexture
-        | ImageFeatureMode::RichEdge => {
+        | ImageFeatureMode::RichEdge
+        | ImageFeatureMode::RichLayout => {
             let rgb = resized.to_rgb8();
             let gray_values = grayscale_pixels(&resized.to_luma8(), config.invert);
             let mut features = color_histogram(&rgb, config.invert);
@@ -90,6 +93,7 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
                     | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(spatial_hsv_histogram(&rgb, config.invert));
             }
@@ -99,6 +103,7 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
                     | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(normalized_color_moments(&rgb, config.invert));
             }
@@ -107,6 +112,7 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                 ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
                     | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(hog_block_features(
                     &gray_values,
@@ -116,7 +122,9 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
             }
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichTexture | ImageFeatureMode::RichEdge
+                ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(lbp_radius_features(
                     &gray_values,
@@ -127,6 +135,13 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
             }
             if config.feature_mode == ImageFeatureMode::RichEdge {
                 features.extend(edge_density_features(
+                    &gray_values,
+                    config.width as usize,
+                    config.height as usize,
+                ));
+            }
+            if config.feature_mode == ImageFeatureMode::RichLayout {
+                features.extend(layout_features(
                     &gray_values,
                     config.width as usize,
                     config.height as usize,
@@ -238,7 +253,8 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
         | ImageFeatureMode::RichNormalized
         | ImageFeatureMode::RichHog
         | ImageFeatureMode::RichTexture
-        | ImageFeatureMode::RichEdge => {
+        | ImageFeatureMode::RichEdge
+        | ImageFeatureMode::RichLayout => {
             let mut features = color_histogram_from_gray(&values);
             features.extend(spatial_intensity_stats(&values, width, height));
             features.extend(hog_features(&values, width, height));
@@ -252,6 +268,7 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
                     | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(spatial_hsv_histogram_from_gray(&values, width, height));
             }
@@ -261,6 +278,7 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
                     | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(gray_normalized_color_moments(&values));
             }
@@ -269,17 +287,23 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
                 ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
                     | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(hog_block_features(&values, width, height));
             }
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichTexture | ImageFeatureMode::RichEdge
+                ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
+                    | ImageFeatureMode::RichLayout
             ) {
                 features.extend(lbp_radius_features(&values, width, height, 2));
             }
             if config.feature_mode == ImageFeatureMode::RichEdge {
                 features.extend(edge_density_features(&values, width, height));
+            }
+            if config.feature_mode == ImageFeatureMode::RichLayout {
+                features.extend(layout_features(&values, width, height));
             }
             features
         }
@@ -628,6 +652,178 @@ fn edge_density_features(values: &[f64], width: usize, height: usize) -> Vec<f64
     }
 
     features
+}
+
+fn layout_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
+    if width == 0 || height == 0 || values.is_empty() {
+        return vec![0.0; LAYOUT_LEN];
+    }
+
+    let count = (width * height).min(values.len()).max(1);
+    let mean = values.iter().take(count).sum::<f64>() / count as f64;
+    let mut total_weight = 0.0;
+    let mut weighted_x = 0.0;
+    let mut weighted_y = 0.0;
+    let mut center_weight = 0.0;
+    let mut left_weight = 0.0;
+    let mut right_weight = 0.0;
+    let mut top_weight = 0.0;
+    let mut bottom_weight = 0.0;
+    let mut quadrants = [0.0; 4];
+
+    for y in 0..height {
+        for x in 0..width {
+            let Some(value) = values.get(y * width + x).copied() else {
+                continue;
+            };
+            let weight = (value - mean).abs();
+            total_weight += weight;
+            weighted_x += weight * normalized_position(x, width);
+            weighted_y += weight * normalized_position(y, height);
+
+            if x >= width / 4 && x < width - width / 4 && y >= height / 4 && y < height - height / 4
+            {
+                center_weight += weight;
+            }
+            if x < width / 2 {
+                left_weight += weight;
+            } else {
+                right_weight += weight;
+            }
+            if y < height / 2 {
+                top_weight += weight;
+            } else {
+                bottom_weight += weight;
+            }
+
+            let quadrant_x = usize::from(x >= width / 2);
+            let quadrant_y = usize::from(y >= height / 2);
+            quadrants[quadrant_y * 2 + quadrant_x] += weight;
+        }
+    }
+
+    let total_weight = total_weight.max(f64::EPSILON);
+    let centroid_x = weighted_x / total_weight;
+    let centroid_y = weighted_y / total_weight;
+    let mut spread_x = 0.0;
+    let mut spread_y = 0.0;
+    for y in 0..height {
+        for x in 0..width {
+            let Some(value) = values.get(y * width + x).copied() else {
+                continue;
+            };
+            let weight = (value - mean).abs();
+            spread_x += weight * (normalized_position(x, width) - centroid_x).powi(2);
+            spread_y += weight * (normalized_position(y, height) - centroid_y).powi(2);
+        }
+    }
+    spread_x = (spread_x / total_weight).sqrt();
+    spread_y = (spread_y / total_weight).sqrt();
+
+    let center_ratio = center_weight / total_weight;
+    let border_ratio = 1.0 - center_ratio;
+    let left_right_balance = (left_weight - right_weight).abs() / total_weight;
+    let top_bottom_balance = (top_weight - bottom_weight).abs() / total_weight;
+
+    let mut features = Vec::with_capacity(LAYOUT_LEN);
+    features.push(horizontal_mirror_difference(values, width, height));
+    features.push(vertical_mirror_difference(values, width, height));
+    features.push(diagonal_difference(values, width, height, false));
+    features.push(diagonal_difference(values, width, height, true));
+    features.push(centroid_x.clamp(0.0, 1.0));
+    features.push(centroid_y.clamp(0.0, 1.0));
+    features.push(spread_x.clamp(0.0, 1.0));
+    features.push(spread_y.clamp(0.0, 1.0));
+    features.push(center_ratio.clamp(0.0, 1.0));
+    features.push(border_ratio.clamp(0.0, 1.0));
+    features.push(left_right_balance.clamp(0.0, 1.0));
+    features.push(top_bottom_balance.clamp(0.0, 1.0));
+    features.extend(
+        quadrants
+            .into_iter()
+            .map(|value| (value / total_weight).clamp(0.0, 1.0)),
+    );
+    features
+}
+
+fn normalized_position(index: usize, size: usize) -> f64 {
+    if size <= 1 {
+        0.5
+    } else {
+        index as f64 / (size - 1) as f64
+    }
+}
+
+fn horizontal_mirror_difference(values: &[f64], width: usize, height: usize) -> f64 {
+    let pair_count = (width / 2) * height;
+    if pair_count == 0 {
+        return 0.0;
+    }
+
+    let mut total = 0.0;
+    for y in 0..height {
+        for x in 0..width / 2 {
+            let left = values.get(y * width + x).copied().unwrap_or(0.0);
+            let right = values
+                .get(y * width + width.saturating_sub(1) - x)
+                .copied()
+                .unwrap_or(0.0);
+            total += (left - right).abs();
+        }
+    }
+    (total / pair_count as f64).clamp(0.0, 1.0)
+}
+
+fn vertical_mirror_difference(values: &[f64], width: usize, height: usize) -> f64 {
+    let pair_count = width * (height / 2);
+    if pair_count == 0 {
+        return 0.0;
+    }
+
+    let mut total = 0.0;
+    for y in 0..height / 2 {
+        for x in 0..width {
+            let top = values.get(y * width + x).copied().unwrap_or(0.0);
+            let bottom = values
+                .get((height.saturating_sub(1) - y) * width + x)
+                .copied()
+                .unwrap_or(0.0);
+            total += (top - bottom).abs();
+        }
+    }
+    (total / pair_count as f64).clamp(0.0, 1.0)
+}
+
+fn diagonal_difference(values: &[f64], width: usize, height: usize, anti: bool) -> f64 {
+    let size = width.min(height);
+    if size <= 1 {
+        return 0.0;
+    }
+
+    let mut total = 0.0;
+    let mut pairs = 0usize;
+    for y in 0..size {
+        for x in 0..size {
+            if x >= y {
+                continue;
+            }
+            let first_x = if anti { width - 1 - x } else { x };
+            let first_y = y;
+            let second_x = if anti { width - 1 - y } else { y };
+            let second_y = x;
+            let first = values
+                .get(first_y * width + first_x)
+                .copied()
+                .unwrap_or(0.0);
+            let second = values
+                .get(second_y * width + second_x)
+                .copied()
+                .unwrap_or(0.0);
+            total += (first - second).abs();
+            pairs += 1;
+        }
+    }
+    (total / pairs.max(1) as f64).clamp(0.0, 1.0)
 }
 
 fn channel_value(value: u8, invert: bool) -> f64 {

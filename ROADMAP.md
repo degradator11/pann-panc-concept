@@ -18,7 +18,7 @@ The prototype can:
 - skip corrupt image files during folder benchmarks
 - compare image feature modes: `pixels`, `color`, `hog`, `combined`, `rich`,
   `rich-spatial`, `rich-normalized`, and `rich-hog`
-  plus `rich-texture` and `rich-edge`
+  plus `rich-texture`, `rich-edge`, and `rich-layout`
 - compare image resize modes: `stretch`, `center-crop`, and `letterbox`
 - compare PANN correction modes in benchmark matrix runs
 - report JSON or CSV metrics
@@ -56,6 +56,7 @@ not artifact persistence or simply running more epochs.
   - rich-hog block-normalized HOG vector
   - rich-texture multi-scale LBP vector
   - rich-edge regional edge-density vector
+  - rich-layout symmetry and foreground-layout vector
 - Separate train/eval image folders with class-name label matching
 - Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
 - Image benchmark matrix command with CSV/JSON report output, including
@@ -155,10 +156,13 @@ Eval:  C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium\Eval
 | --- | --- | ---: | --- | ---: | ---: |
 | PANN | rich-texture, center-crop resize | 64 | 1,2,3 | 68.8% | 69.8% |
 | PANN | rich-edge, center-crop resize | 64 | 1,2,3 | 68.7% | 69.6% |
+| PANN | rich-layout, center-crop resize | 64 | 1,2,3 | 68.8% | 69.6% |
 
 Interpretation: the new regional edge-density block is implemented and works,
 but it was neutral/slightly worse than `rich-texture` on the tougher medium
-Cats/Dogs split. Keep `rich-texture` as the current classical default.
+Cats/Dogs split. The symmetry/layout block was also neutral/slightly worse on
+mean accuracy, though it shifted some seed-level class balance. Keep
+`rich-texture` as the current classical default.
 
 Latest learning-curve result, modeled after the public Progress tests page's
 target-MSE/epoch/error/time reporting:
@@ -394,7 +398,8 @@ Classical image features to try before pretrained embeddings:
 - multi-scale local binary patterns or other texture descriptors: implemented
   as `--image-features rich-texture`
 - edge density by image region: implemented as `--image-features rich-edge`
-- simple symmetry/layout features
+- simple symmetry/layout features: implemented as `--image-features
+  rich-layout`
 - simple foreground/background normalization for object datasets
 
 Optional later feature path:
