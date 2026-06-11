@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use progress_ai::pann::CorrectionMode;
 use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, load_image_folder};
 
-use super::run::{run_panc, run_pann};
+use super::run::{run_centroid, run_panc, run_pann};
 use super::{
     Args, CommandOutput, MatrixModel, MatrixReport, MatrixRow, MatrixSummary, OutputFormat,
     PerClassAccuracy, image_config, most_common_confusion, required_data_path, worst_class,
@@ -71,6 +71,20 @@ pub fn run_image_matrix(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
                                 );
                                 let dataset = load_image_folder(data_path, image_config(&variant))?;
                                 let metrics = run_panc(dataset, "image-folder", &variant)?;
+                                rows.push(row_from_metrics(&metrics, *image_size, *seed));
+                            }
+                            MatrixModel::Centroid => {
+                                let variant = variant_args(
+                                    args,
+                                    *feature,
+                                    *resize_mode,
+                                    args.correction_mode,
+                                    *image_size,
+                                    *seed,
+                                    0,
+                                );
+                                let dataset = load_image_folder(data_path, image_config(&variant))?;
+                                let metrics = run_centroid(dataset, "image-folder", &variant)?;
                                 rows.push(row_from_metrics(&metrics, *image_size, *seed));
                             }
                         }

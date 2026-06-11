@@ -5,6 +5,7 @@
 //! local public-material review notes. It does not claim compatibility with
 //! Progress, Inc.'s private systems or published benchmark results.
 
+pub mod baseline;
 pub mod panc;
 pub mod pann;
 pub mod preprocess;

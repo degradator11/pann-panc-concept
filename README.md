@@ -169,6 +169,7 @@ Run PANN or PANC-like recognition over that folder:
 ```powershell
 cargo run --bin research-bench -- pann-image-folder --data C:\path\to\my-images --image-size 64 --epochs 20 --intervals 8 --image-features rich
 cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images --image-size 64 --image-features rich
+cargo run --bin research-bench -- centroid-image-folder --data C:\path\to\my-images --image-size 64 --image-features rich
 ```
 
 Supported image formats are PNG and JPEG. Images are resized to the configured
@@ -229,6 +230,7 @@ Use:
 ```powershell
 cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 64 --epochs 12 --intervals 8 --image-features rich --format json
 cargo run --release --bin research-bench -- panc-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 64 --image-features rich --format json
+cargo run --release --bin research-bench -- centroid-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 64 --image-features rich --format json
 ```
 
 In-memory image-folder benchmarks can also write the static debug report
@@ -346,13 +348,13 @@ feature modes, image sizes, interval counts, and random seeds.
 Small Cats/Dogs matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox,foreground-crop --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc,centroid --matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox,foreground-crop --epochs 12
 ```
 
 Larger matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox,foreground-crop --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc,centroid --matrix-features pixels,hog,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox,foreground-crop --epochs 12
 ```
 
 Notes:
@@ -360,6 +362,8 @@ Notes:
 - PANN runs once per interval count.
 - PANC-like comparison ignores interval count and runs once per
   model/feature/image-size/seed.
+- `--matrix-models centroid` adds a nearest-centroid Euclidean baseline for
+  checking whether PANN/PANC are beating a simple conventional classifier.
 - `--matrix-resize-modes` adds resize/normalization modes to the sweep.
 - `--matrix-correction-modes` adds PANN correction/update modes to the sweep.
   PANC-like comparison ignores this option because it does not use PANN

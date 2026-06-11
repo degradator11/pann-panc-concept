@@ -12,6 +12,7 @@ The prototype can:
 
 - train and evaluate PANN-like models on vector and image-folder datasets
 - run PANC-like analogue comparator benchmarks
+- run a nearest-centroid Euclidean baseline for conventional comparison
 - load CSV/vector data and class-folder image datasets
 - use deterministic train/test splits
 - use separate image train/eval folders through `--eval-data`
@@ -41,6 +42,7 @@ not artifact persistence or simply running more epochs.
 - PANN core model with configurable intervals, distributors, correction modes,
   and plasticity schedule
 - PANC-like dense comparator with multiple similarity metrics
+- Nearest-centroid baseline model for conventional benchmark comparisons
 - Preprocessing utilities for scaling, clipping, one-hot labels, and splits
 - `research-bench` CLI for Iris, synthetic data, and image folders
 - Small Iris CSV committed locally
@@ -157,6 +159,7 @@ Eval:  C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium\Eval
 | Model | Features | Image Size | Seeds | Mean Eval Accuracy | Best Eval Accuracy |
 | --- | --- | ---: | --- | ---: | ---: |
 | PANN | rich-texture, center-crop resize | 64 | 1,2,3 | 68.8% | 69.8% |
+| Centroid | rich-texture, center-crop resize | 64 | 1,2,3 | 70.5% | 70.5% |
 | PANN | rich-edge, center-crop resize | 64 | 1,2,3 | 68.7% | 69.6% |
 | PANN | rich-layout, center-crop resize | 64 | 1,2,3 | 68.8% | 69.6% |
 
@@ -164,7 +167,10 @@ Interpretation: the new regional edge-density block is implemented and works,
 but it was neutral/slightly worse than `rich-texture` on the tougher medium
 Cats/Dogs split. The symmetry/layout block was also neutral/slightly worse on
 mean accuracy, though it shifted some seed-level class balance. Keep
-`rich-texture` as the current classical default.
+`rich-texture` as the current classical default. The nearest-centroid baseline
+beats the current PANN setting on this medium split, which suggests the
+handcrafted vector contains usable signal while the current PANN training setup
+is overfitting it.
 
 Latest medium-set preprocessing smoke:
 
@@ -423,7 +429,8 @@ Optional later feature path:
 - keep this optional and clearly separate from the public-source classical
   reconstruction
 - compare against a small conventional baseline so we know whether the
-  bottleneck is PANN/PANC or the feature vector itself
+  bottleneck is PANN/PANC or the feature vector itself: implemented as
+  `centroid-*` commands and `--matrix-models centroid`
 
 ## Dataset Roadmap
 

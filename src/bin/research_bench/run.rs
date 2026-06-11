@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::time::Instant;
 
+use progress_ai::baseline::NearestCentroidClassifier;
 use progress_ai::panc::{PancComparator, SimilarityMetric};
 use progress_ai::pann::{Distributor, IntervalStrategy, PannConfig, PannModel};
 use progress_ai::preprocess::{
@@ -49,11 +50,35 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         "panc-image-folder" => folder_commands::run_panc_image_folder(args),
+        "centroid-iris" => run_centroid(load_iris(args.data_path.as_deref())?, "iris", args)
+            .map(CommandOutput::Metrics),
+        "centroid-synthetic" => {
+            run_centroid(synthetic_dataset(args.seed), "synthetic", args)
+                .map(CommandOutput::Metrics)
+        }
+        "centroid-image-synthetic" => run_centroid(
+            synthetic_image_dataset(image_config(args), args.samples_per_class, args.seed)?,
+            "image-synthetic",
+            args,
+        )
+        .map(CommandOutput::Metrics),
+        "centroid-image-folder" => run_centroid(
+            load_image_folder(required_data_path_for_run(args)?, image_config(args))?,
+            "image-folder",
+            args,
+        )
+        .map(CommandOutput::Metrics),
         command => Err(format!(
-            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, or pann-learning-curve"
+            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, or pann-learning-curve"
         )
         .into()),
     }
+}
+
+fn required_data_path_for_run(args: &Args) -> Result<&str, Box<dyn Error>> {
+    args.data_path
+        .as_deref()
+        .ok_or_else(|| "--data is required".into())
 }
 
 pub(super) fn run_pann(
@@ -154,6 +179,55 @@ pub(super) fn run_panc(
         interval_count: 0,
         distributor: "none".to_string(),
         correction_mode: "top_k_euclidean_vote".to_string(),
+        per_class_accuracy: test_diagnostics.per_class_accuracy,
+        confusion_matrix: test_diagnostics.confusion_matrix,
+    })
+}
+
+pub(super) fn run_centroid(
+    dataset: Dataset,
+    dataset_name: &str,
+    args: &Args,
+) -> Result<BenchMetrics, Box<dyn Error>> {
+    let split = evaluation_split(&dataset, dataset_name, args)?;
+    let ranges = min_max_ranges(&split.train_samples);
+    let train_samples = min_max_scale(&split.train_samples, &ranges);
+    let test_samples = min_max_scale(&split.test_samples, &ranges);
+
+    let train_start = Instant::now();
+    let classifier = NearestCentroidClassifier::fit(
+        &train_samples,
+        &split.train_labels,
+        dataset.class_names.len(),
+    )?;
+    let train_ms = train_start.elapsed().as_millis();
+
+    let inference_start = Instant::now();
+    let train_predictions = classifier.predict_batch(&train_samples)?;
+    let test_predictions = classifier.predict_batch(&test_samples)?;
+    let train_diagnostics = classification_metrics(
+        &split.train_labels,
+        &train_predictions,
+        &dataset.class_names,
+    );
+    let test_diagnostics =
+        classification_metrics(&split.test_labels, &test_predictions, &dataset.class_names);
+    let inference_ms = inference_start.elapsed().as_millis();
+
+    Ok(BenchMetrics {
+        model: "centroid".to_string(),
+        dataset: dataset_name.to_string(),
+        image_features: metrics_image_features(dataset_name, args),
+        image_resize: metrics_image_resize(dataset_name, args),
+        train_accuracy: train_diagnostics.accuracy,
+        test_accuracy: test_diagnostics.accuracy,
+        train_ms,
+        inference_ms,
+        memory_bytes: classifier.memory_bytes_estimate(),
+        epochs: 0,
+        interval_count: 0,
+        distributor: "none".to_string(),
+        correction_mode: "nearest_centroid_euclidean".to_string(),
         per_class_accuracy: test_diagnostics.per_class_accuracy,
         confusion_matrix: test_diagnostics.confusion_matrix,
     })

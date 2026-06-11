@@ -83,6 +83,11 @@ README's artifact section for the full command examples. Artifact evaluation
 reports per-class accuracy, a confusion matrix, and a short list of
 misclassified image paths for diagnostics.
 
+For a conventional comparison point, `centroid-image-folder` and
+`--matrix-models centroid` run a nearest-centroid Euclidean baseline on the
+same vectors. This is useful for checking whether PANN/PANC are adding value
+beyond the handcrafted image representation itself.
+
 Artifact evaluation can also write a static debug report with `--debug-out`.
 The report includes `index.html`, prediction CSV/JSON files, per-class and
 confusion CSVs, processed image steps, scaled feature vectors, and per-sample
