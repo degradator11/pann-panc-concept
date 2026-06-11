@@ -61,6 +61,11 @@ Image benchmarks support `--image-features pixels`, `color`, `hog`, and
 because it adds color histograms, coarse intensity layout, and HOG-like edge
 features before PANN/PANC processing.
 
+The benchmark CLI also supports persistent image artifacts with
+`train-pann-image-folder`, `eval-pann`, `predict-pann`,
+`train-panc-image-folder`, `eval-panc`, and `predict-panc`. See the root
+README's artifact section for the full command examples.
+
 ## Legal boundary
 
 These notes are for technical analysis. They are not legal advice. Several

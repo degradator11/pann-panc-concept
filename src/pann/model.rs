@@ -2,6 +2,16 @@ use super::intervals::{
     QuantileEdges, fit_intervals, validate_config, validate_ranges, validate_samples,
 };
 use super::{Distributor, FeatureRange, PannConfig, PannError};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PannModelSnapshot {
+    pub config: PannConfig,
+    pub ranges: Vec<FeatureRange>,
+    pub quantile_edges: Option<Vec<Vec<f64>>>,
+    pub weights: Vec<f64>,
+    pub access_counts: Vec<u32>,
+}
 
 #[derive(Debug, Clone)]
 pub struct PannModel {
@@ -67,6 +77,44 @@ impl PannModel {
         })
     }
 
+    pub fn from_snapshot(snapshot: PannModelSnapshot) -> Result<Self, PannError> {
+        validate_config(&snapshot.config)?;
+        validate_ranges(snapshot.config.input_count, &snapshot.ranges)?;
+
+        if let Some(edges) = &snapshot.quantile_edges
+            && edges.len() != snapshot.config.input_count
+        {
+            return Err(PannError::RangeCountMismatch {
+                expected: snapshot.config.input_count,
+                actual: edges.len(),
+            });
+        }
+
+        let expected_weight_count = snapshot.config.input_count
+            * snapshot.config.interval_count
+            * snapshot.config.output_count;
+        if snapshot.weights.len() != expected_weight_count {
+            return Err(PannError::WeightCountMismatch {
+                expected: expected_weight_count,
+                actual: snapshot.weights.len(),
+            });
+        }
+        if snapshot.access_counts.len() != expected_weight_count {
+            return Err(PannError::AccessCountMismatch {
+                expected: expected_weight_count,
+                actual: snapshot.access_counts.len(),
+            });
+        }
+
+        Ok(Self {
+            config: snapshot.config,
+            ranges: snapshot.ranges,
+            quantile_edges: snapshot.quantile_edges,
+            weights: snapshot.weights,
+            access_counts: snapshot.access_counts,
+        })
+    }
+
     pub fn from_training_data(
         samples: &[Vec<f64>],
         interval_count: usize,
@@ -127,6 +175,16 @@ impl PannModel {
 
     pub fn access_counts(&self) -> &[u32] {
         &self.access_counts
+    }
+
+    pub fn snapshot(&self) -> PannModelSnapshot {
+        PannModelSnapshot {
+            config: self.config.clone(),
+            ranges: self.ranges.clone(),
+            quantile_edges: self.quantile_edges.clone(),
+            weights: self.weights.clone(),
+            access_counts: self.access_counts.clone(),
+        }
     }
 
     pub fn memory_bytes_estimate(&self) -> usize {

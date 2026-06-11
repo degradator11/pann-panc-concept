@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum SimilarityMetric {
     Cosine,
     Euclidean,
@@ -6,7 +8,7 @@ pub enum SimilarityMetric {
     Jaccard { threshold: f64 },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum BinarySimilarityMetric {
     Hamming,
     Jaccard,

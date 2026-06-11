@@ -9,6 +9,9 @@ pub struct Args {
     pub format: OutputFormat,
     pub data_path: Option<String>,
     pub eval_data_path: Option<String>,
+    pub out_path: Option<String>,
+    pub model_path: Option<String>,
+    pub image_path: Option<String>,
     pub epochs: usize,
     pub intervals: usize,
     pub seed: u64,
@@ -16,6 +19,7 @@ pub struct Args {
     pub image_height: u32,
     pub image_features: ImageFeatureMode,
     pub samples_per_class: usize,
+    pub top_k: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +31,7 @@ pub enum OutputFormat {
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder> [--format json|csv] [--data path] [--eval-data path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--image-features pixels|color|hog|combined] [--samples-per-class n]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--image-features pixels|color|hog|combined] [--samples-per-class n] [--top-k n]",
     )?;
 
     let mut args = Args {
@@ -35,6 +39,9 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         format: OutputFormat::Json,
         data_path: None,
         eval_data_path: None,
+        out_path: None,
+        model_path: None,
+        image_path: None,
         epochs: 12,
         intervals: 8,
         seed: 42,
@@ -42,6 +49,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         image_height: 16,
         image_features: ImageFeatureMode::Pixels,
         samples_per_class: 80,
+        top_k: 3,
     };
 
     while let Some(flag) = raw.next() {
@@ -57,6 +65,9 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
             "--eval-data" => {
                 args.eval_data_path = Some(raw.next().ok_or("--eval-data requires a value")?);
             }
+            "--out" => args.out_path = Some(raw.next().ok_or("--out requires a value")?),
+            "--model" => args.model_path = Some(raw.next().ok_or("--model requires a value")?),
+            "--image" => args.image_path = Some(raw.next().ok_or("--image requires a value")?),
             "--epochs" => {
                 args.epochs = raw
                     .next()
@@ -107,6 +118,12 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .ok_or("--samples-per-class requires a value")?
                     .parse::<usize>()?;
             }
+            "--top-k" => {
+                args.top_k = raw
+                    .next()
+                    .ok_or("--top-k requires a value")?
+                    .parse::<usize>()?;
+            }
             other => return Err(format!("unknown option {other}").into()),
         }
     }
@@ -123,4 +140,22 @@ pub fn required_data_path(args: &Args) -> Result<&str, Box<dyn Error>> {
     args.data_path
         .as_deref()
         .ok_or_else(|| "--data path is required for image-folder benchmarks".into())
+}
+
+pub fn required_out_path(args: &Args) -> Result<&str, Box<dyn Error>> {
+    args.out_path
+        .as_deref()
+        .ok_or_else(|| "--out path is required for training artifact commands".into())
+}
+
+pub fn required_model_path(args: &Args) -> Result<&str, Box<dyn Error>> {
+    args.model_path
+        .as_deref()
+        .ok_or_else(|| "--model path is required for artifact eval/predict commands".into())
+}
+
+pub fn required_image_path(args: &Args) -> Result<&str, Box<dyn Error>> {
+    args.image_path
+        .as_deref()
+        .ok_or_else(|| "--image path is required for predict commands".into())
 }

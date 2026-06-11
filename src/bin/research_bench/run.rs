@@ -10,36 +10,54 @@ use progress_ai::preprocess::{
 use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 
 use super::datasets::{load_iris, synthetic_dataset};
-use super::{Args, BenchMetrics, image_config, required_data_path};
+use super::{
+    Args, BenchMetrics, CommandOutput, artifact_commands, image_config, required_data_path,
+};
 
-pub fn run(args: &Args) -> Result<BenchMetrics, Box<dyn Error>> {
+pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
     match args.command.as_str() {
-        "pann-iris" => run_pann(load_iris(args.data_path.as_deref())?, "iris", args),
-        "pann-synthetic" => run_pann(synthetic_dataset(args.seed), "synthetic", args),
+        "train-pann-image-folder" => artifact_commands::train_pann_image_folder(args),
+        "train-panc-image-folder" => artifact_commands::train_panc_image_folder(args),
+        "eval-pann" => artifact_commands::eval_pann(args),
+        "eval-panc" => artifact_commands::eval_panc(args),
+        "predict-pann" => artifact_commands::predict_pann(args),
+        "predict-panc" => artifact_commands::predict_panc(args),
+        "pann-iris" => run_pann(load_iris(args.data_path.as_deref())?, "iris", args)
+            .map(CommandOutput::Metrics),
+        "pann-synthetic" => {
+            run_pann(synthetic_dataset(args.seed), "synthetic", args).map(CommandOutput::Metrics)
+        }
         "pann-image-synthetic" => run_pann(
             synthetic_image_dataset(image_config(args), args.samples_per_class, args.seed)?,
             "image-synthetic",
             args,
-        ),
+        )
+        .map(CommandOutput::Metrics),
         "pann-image-folder" => run_pann(
             load_image_folder(required_data_path(args)?, image_config(args))?,
             "image-folder",
             args,
-        ),
-        "panc-iris" => run_panc(load_iris(args.data_path.as_deref())?, "iris", args),
-        "panc-synthetic" => run_panc(synthetic_dataset(args.seed), "synthetic", args),
+        )
+        .map(CommandOutput::Metrics),
+        "panc-iris" => run_panc(load_iris(args.data_path.as_deref())?, "iris", args)
+            .map(CommandOutput::Metrics),
+        "panc-synthetic" => {
+            run_panc(synthetic_dataset(args.seed), "synthetic", args).map(CommandOutput::Metrics)
+        }
         "panc-image-synthetic" => run_panc(
             synthetic_image_dataset(image_config(args), args.samples_per_class, args.seed)?,
             "image-synthetic",
             args,
-        ),
+        )
+        .map(CommandOutput::Metrics),
         "panc-image-folder" => run_panc(
             load_image_folder(required_data_path(args)?, image_config(args))?,
             "image-folder",
             args,
-        ),
+        )
+        .map(CommandOutput::Metrics),
         command => Err(format!(
-            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder"
+            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, or predict-panc"
         )
         .into()),
     }

@@ -12,7 +12,7 @@ pub use config::{
     Activation, CorrectionMode, Distributor, EpochMetrics, FeatureRange, IntervalStrategy,
     PannConfig, PannError, PlasticitySchedule, TrainingConfig, TrainingStep,
 };
-pub use model::PannModel;
+pub use model::{PannModel, PannModelSnapshot};
 
 pub fn one_hot(label: usize, output_count: usize) -> Vec<f64> {
     let mut target = vec![0.0; output_count];

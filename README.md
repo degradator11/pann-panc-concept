@@ -292,6 +292,42 @@ For PANN, `epochs` and `interval_count` affect training directly. For PANC-like
 comparison, there is no iterative training; references are stored and evaluated
 with top-k similarity voting.
 
+### Persistent Training Artifacts
+
+The in-memory benchmark commands train and evaluate in one run. To train once
+and reuse the result later, use the artifact commands.
+
+Train PANN and write a model JSON file:
+
+```powershell
+cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
+```
+
+Evaluate the saved PANN artifact:
+
+```powershell
+cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval --format json
+```
+
+Predict one image with the saved PANN artifact:
+
+```powershell
+cargo run --release --bin research-bench -- predict-pann --model models\cats-dogs-pann.json --image C:\datasets\cats-dogs\eval\Cat\cat-001.jpg --format json
+```
+
+PANC-like artifacts use the same pattern:
+
+```powershell
+cargo run --release --bin research-bench -- train-panc-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-panc.json --image-size 32 --image-features combined --format json
+cargo run --release --bin research-bench -- eval-panc --model models\cats-dogs-panc.json --data C:\datasets\cats-dogs\eval --format json
+cargo run --release --bin research-bench -- predict-panc --model models\cats-dogs-panc.json --image C:\datasets\cats-dogs\eval\Dog\dog-001.jpg --format json
+```
+
+Artifact JSON stores model kind/version, class names, image size, feature mode,
+preprocessing ranges, and model data. PANN artifacts store weights and access
+counts. PANC-like artifacts store reference vectors and labels. Generated
+`models/` files are ignored by git.
+
 ## Library Usage
 
 Minimal PANN example:

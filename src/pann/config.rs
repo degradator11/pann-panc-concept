@@ -128,6 +128,10 @@ pub enum PannError {
     InputLengthMismatch { expected: usize, actual: usize },
     #[error("expected target length {expected}, got {actual}")]
     TargetLengthMismatch { expected: usize, actual: usize },
+    #[error("expected {expected} weights, got {actual}")]
+    WeightCountMismatch { expected: usize, actual: usize },
+    #[error("expected {expected} access counts, got {actual}")]
+    AccessCountMismatch { expected: usize, actual: usize },
     #[error("sample count {samples} does not match target count {targets}")]
     SampleTargetCountMismatch { samples: usize, targets: usize },
     #[error("the distributor produced no active weights")]

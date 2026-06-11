@@ -40,6 +40,7 @@ Cats/Dogs accuracy is still modest with classical features.
   - HOG-like edge buckets
   - combined color/layout/edge vector
 - Separate train/eval image folders with class-name label matching
+- Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
 - README dataset links and run instructions
 
 ## Latest Cats/Dogs Snapshot
@@ -72,19 +73,27 @@ Results with `--image-size 32`:
 Interpretation: `combined` features show real improvement over raw pixels,
 especially for PANN, but the model is not yet a strong cat/dog recognizer.
 
-## Next Milestone: Persistent Artifacts
+## Implemented Milestone: Persistent Artifacts
 
-Goal: make training produce reusable model files.
+Training can now produce reusable model files.
 
-Planned commands:
+PANN commands:
 
 ```powershell
-cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json
-cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval
-cargo run --release --bin research-bench -- predict-pann --model models\cats-dogs-pann.json --image C:\datasets\cat.jpg
+cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
+cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval --format json
+cargo run --release --bin research-bench -- predict-pann --model models\cats-dogs-pann.json --image C:\datasets\cats-dogs\eval\Cat\cat-001.jpg --format json
 ```
 
-Artifact contents should include:
+PANC-like commands:
+
+```powershell
+cargo run --release --bin research-bench -- train-panc-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-panc.json --image-size 32 --image-features combined --format json
+cargo run --release --bin research-bench -- eval-panc --model models\cats-dogs-panc.json --data C:\datasets\cats-dogs\eval --format json
+cargo run --release --bin research-bench -- predict-panc --model models\cats-dogs-panc.json --image C:\datasets\cats-dogs\eval\Dog\dog-001.jpg --format json
+```
+
+Artifact contents include:
 
 - model kind and version
 - class names
@@ -94,12 +103,40 @@ Artifact contents should include:
 - PANN weights and access counts
 - PANC reference vectors and labels, for PANC artifacts
 
-Success criteria:
+Implemented success criteria:
 
 - train once, evaluate later without retraining
 - predict one image from a saved artifact
 - artifact load validates class names, feature dimensions, and config
 - JSON artifact format is deterministic enough for tests
+
+Latest smoke result on the short Cats/Dogs train/eval folders:
+
+| Command | Accuracy |
+| --- | ---: |
+| `eval-pann` from saved artifact | 60.7% |
+| `eval-panc` from saved artifact | 57.8% |
+
+The saved-artifact eval results match the prior in-memory benchmark results.
+
+## Next Milestone: Benchmark Matrix
+
+Goal: run repeatable experiment grids instead of one command at a time.
+
+Planned command shape:
+
+```powershell
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv
+```
+
+Success criteria:
+
+- run PANN/PANC-like benchmarks across multiple seeds
+- compare feature modes, image sizes, and interval counts
+- write CSV and JSON report files
+- include mean/min/max accuracy
+- include train/inference time and memory estimates
+- keep generated reports under ignored `reports/`
 
 ## Benchmark Roadmap
 
@@ -148,7 +185,7 @@ Useful datasets to test:
   analogue comparison?
 - Which PANN interval count is best for low-dimensional handcrafted features?
 - Should PANN training use matrix/batch updates for image benchmarks?
-- What is the smallest artifact format that remains useful and inspectable?
+- What is the most useful default benchmark matrix for fast iteration?
 
 ## Out Of Scope For Now
 

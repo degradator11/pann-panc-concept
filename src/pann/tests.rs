@@ -157,3 +157,24 @@ fn learns_tiny_separable_dataset_when_bins_do_not_overlap() {
 
     assert_close(model.accuracy(&samples, &labels).unwrap(), 1.0);
 }
+
+#[test]
+fn snapshot_round_trip_preserves_predictions() {
+    let samples = vec![vec![0.1], vec![0.9]];
+    let targets = vec![one_hot(0, 2), one_hot(1, 2)];
+    let mut model = PannModel::with_unit_ranges(1, 2, 2, Distributor::HardBin).unwrap();
+
+    model.train_epoch_difference(&samples, &targets).unwrap();
+    let restored = PannModel::from_snapshot(model.snapshot()).unwrap();
+
+    assert_eq!(
+        restored.predict(&[0.1]).unwrap(),
+        model.predict(&[0.1]).unwrap()
+    );
+    assert_eq!(
+        restored.predict(&[0.9]).unwrap(),
+        model.predict(&[0.9]).unwrap()
+    );
+    assert_eq!(restored.weights(), model.weights());
+    assert_eq!(restored.access_counts(), model.access_counts());
+}
