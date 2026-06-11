@@ -8,6 +8,7 @@ const HSV_BINS: usize = 8;
 const SPATIAL_GRID: usize = 4;
 const HOG_BINS: usize = 8;
 const LBP_BINS: usize = 16;
+const HOG_BLOCK_GRID: usize = SPATIAL_GRID - 1;
 
 pub(super) const COLOR_HISTOGRAM_LEN: usize = COLOR_BINS * 3;
 pub(super) const HSV_HISTOGRAM_LEN: usize = HSV_BINS * 3;
@@ -15,12 +16,14 @@ pub(super) const COLOR_MOMENTS_LEN: usize = 12;
 pub(super) const NORMALIZED_COLOR_MOMENTS_LEN: usize = 6;
 pub(super) const SPATIAL_STATS_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * 2;
 pub(super) const HOG_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HOG_BINS;
+pub(super) const HOG_BLOCK_LEN: usize = HOG_BLOCK_GRID * HOG_BLOCK_GRID * 4 * HOG_BINS;
 pub(super) const LBP_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * LBP_BINS;
 pub(super) const SPATIAL_HSV_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HSV_HISTOGRAM_LEN;
 pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN + HOG_LEN;
 pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
 pub(super) const RICH_SPATIAL_LEN: usize = RICH_LEN + SPATIAL_HSV_LEN;
 pub(super) const RICH_NORMALIZED_LEN: usize = RICH_SPATIAL_LEN + NORMALIZED_COLOR_MOMENTS_LEN;
+pub(super) const RICH_HOG_LEN: usize = RICH_NORMALIZED_LEN + HOG_BLOCK_LEN;
 
 pub(super) struct ImageProcessingStep {
     pub name: &'static str,
@@ -53,7 +56,8 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
         }
         ImageFeatureMode::Rich
         | ImageFeatureMode::RichSpatial
-        | ImageFeatureMode::RichNormalized => {
+        | ImageFeatureMode::RichNormalized
+        | ImageFeatureMode::RichHog => {
             let rgb = resized.to_rgb8();
             let gray_values = grayscale_pixels(&resized.to_luma8(), config.invert);
             let mut features = color_histogram(&rgb, config.invert);
@@ -76,12 +80,24 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
             ));
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichSpatial | ImageFeatureMode::RichNormalized
+                ImageFeatureMode::RichSpatial
+                    | ImageFeatureMode::RichNormalized
+                    | ImageFeatureMode::RichHog
             ) {
                 features.extend(spatial_hsv_histogram(&rgb, config.invert));
             }
-            if config.feature_mode == ImageFeatureMode::RichNormalized {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichNormalized | ImageFeatureMode::RichHog
+            ) {
                 features.extend(normalized_color_moments(&rgb, config.invert));
+            }
+            if config.feature_mode == ImageFeatureMode::RichHog {
+                features.extend(hog_block_features(
+                    &gray_values,
+                    config.width as usize,
+                    config.height as usize,
+                ));
             }
             features
         }
@@ -186,7 +202,8 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
         }
         ImageFeatureMode::Rich
         | ImageFeatureMode::RichSpatial
-        | ImageFeatureMode::RichNormalized => {
+        | ImageFeatureMode::RichNormalized
+        | ImageFeatureMode::RichHog => {
             let mut features = color_histogram_from_gray(&values);
             features.extend(spatial_intensity_stats(&values, width, height));
             features.extend(hog_features(&values, width, height));
@@ -195,12 +212,20 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
             features.extend(lbp_features(&values, width, height));
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichSpatial | ImageFeatureMode::RichNormalized
+                ImageFeatureMode::RichSpatial
+                    | ImageFeatureMode::RichNormalized
+                    | ImageFeatureMode::RichHog
             ) {
                 features.extend(spatial_hsv_histogram_from_gray(&values, width, height));
             }
-            if config.feature_mode == ImageFeatureMode::RichNormalized {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichNormalized | ImageFeatureMode::RichHog
+            ) {
                 features.extend(gray_normalized_color_moments(&values));
+            }
+            if config.feature_mode == ImageFeatureMode::RichHog {
+                features.extend(hog_block_features(&values, width, height));
             }
             features
         }
@@ -537,6 +562,50 @@ fn rgb_to_hsv(r: f64, g: f64, b: f64) -> [f64; 3] {
 }
 
 fn hog_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
+    let mut features = hog_cell_features(values, width, height);
+    for cell in 0..SPATIAL_GRID * SPATIAL_GRID {
+        let start = cell * HOG_BINS;
+        let end = start + HOG_BINS;
+        let sum = features[start..end].iter().sum::<f64>();
+        if sum > f64::EPSILON {
+            for value in &mut features[start..end] {
+                *value /= sum;
+            }
+        }
+    }
+
+    features
+}
+
+fn hog_block_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
+    let cells = hog_cell_features(values, width, height);
+    let mut features = Vec::with_capacity(HOG_BLOCK_LEN);
+
+    for block_y in 0..HOG_BLOCK_GRID {
+        for block_x in 0..HOG_BLOCK_GRID {
+            let mut block = Vec::with_capacity(4 * HOG_BINS);
+            for cell_y in [block_y, block_y + 1] {
+                for cell_x in [block_x, block_x + 1] {
+                    let cell = cell_y * SPATIAL_GRID + cell_x;
+                    let start = cell * HOG_BINS;
+                    block.extend_from_slice(&cells[start..start + HOG_BINS]);
+                }
+            }
+
+            let norm = block
+                .iter()
+                .map(|value| value * value)
+                .sum::<f64>()
+                .sqrt()
+                .max(f64::EPSILON);
+            features.extend(block.into_iter().map(|value| value / norm));
+        }
+    }
+
+    features
+}
+
+fn hog_cell_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
     let mut features = vec![0.0; HOG_LEN];
     if width < 3 || height < 3 {
         return features;
@@ -568,17 +637,6 @@ fn hog_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
             let bin = bin.min(HOG_BINS - 1);
             let cell = spatial_cell(x, y, width, height);
             features[cell * HOG_BINS + bin] += magnitude;
-        }
-    }
-
-    for cell in 0..SPATIAL_GRID * SPATIAL_GRID {
-        let start = cell * HOG_BINS;
-        let end = start + HOG_BINS;
-        let sum = features[start..end].iter().sum::<f64>();
-        if sum > f64::EPSILON {
-            for value in &mut features[start..end] {
-                *value /= sum;
-            }
         }
     }
 

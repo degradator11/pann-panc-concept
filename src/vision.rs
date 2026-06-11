@@ -55,6 +55,7 @@ impl ImageVectorConfig {
             ImageFeatureMode::Rich => features::RICH_LEN,
             ImageFeatureMode::RichSpatial => features::RICH_SPATIAL_LEN,
             ImageFeatureMode::RichNormalized => features::RICH_NORMALIZED_LEN,
+            ImageFeatureMode::RichHog => features::RICH_HOG_LEN,
         }
     }
 }
@@ -68,6 +69,7 @@ pub enum ImageFeatureMode {
     Rich,
     RichSpatial,
     RichNormalized,
+    RichHog,
 }
 
 impl ImageFeatureMode {
@@ -80,6 +82,7 @@ impl ImageFeatureMode {
             Self::Rich => "rich",
             Self::RichSpatial => "rich-spatial",
             Self::RichNormalized => "rich-normalized",
+            Self::RichHog => "rich-hog",
         }
     }
 }
@@ -98,8 +101,9 @@ impl FromStr for ImageFeatureMode {
             "rich-normalized" | "rich-normalised" | "rich-norm" | "rich_normalized" => {
                 Ok(Self::RichNormalized)
             }
+            "rich-hog" | "rich_hog" | "rich-block-hog" | "rich-blockhog" => Ok(Self::RichHog),
             other => Err(format!(
-                "invalid image feature mode {other:?}; expected pixels, color, hog, combined, rich, rich-spatial, or rich-normalized"
+                "invalid image feature mode {other:?}; expected pixels, color, hog, combined, rich, rich-spatial, rich-normalized, or rich-hog"
             )),
         }
     }
@@ -467,6 +471,15 @@ mod tests {
 
         assert_eq!(dataset.samples[0].len(), config.vector_len());
         assert_eq!(config.vector_len(), 866);
+    }
+
+    #[test]
+    fn rich_hog_feature_mode_has_expected_length() {
+        let config = ImageVectorConfig::new(8, 8).with_feature_mode(ImageFeatureMode::RichHog);
+        let dataset = synthetic_image_dataset(config, 1, 9).unwrap();
+
+        assert_eq!(dataset.samples[0].len(), config.vector_len());
+        assert_eq!(config.vector_len(), 1154);
     }
 
     #[test]
