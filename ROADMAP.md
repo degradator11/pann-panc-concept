@@ -120,6 +120,7 @@ It searches:
 - binary threshold
 - Hamming/Jaccard similarity blend
 - top-k vote size
+- 16-block descriptor mask for ignoring weak feature regions
 
 It uses a training-folder validation split for search and reserves `--eval-data`
 for final reporting only.
@@ -141,6 +142,29 @@ Smoke result:
 | Threshold | 0.1188 |
 | Similarity | Hamming/Jaccard blend |
 | Top-k | 3 |
+
+Large medium Cats/Dogs run after adding descriptor-block masks:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium --eval-data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium\Eval --out models\evolved-panc-cats-dogs-blockmask-32threads-pop5000-gen50.json --population 5000 --generations 50 --threads 32 --evolve-image-sizes 64,128 --evolve-features rich,rich-texture,rich-hog,rich-edge,rich-layout --evolve-resize-modes center-crop,foreground-crop --evolve-top-k 1,3,5,7 --memory-penalty-per-mb 0 --inference-penalty-per-ms 0 --format json
+```
+
+| Setting | Value |
+| --- | --- |
+| Runtime | about 21 minutes |
+| Best validation accuracy | 80.84% |
+| Eval accuracy | 75.91% |
+| Image size | 128 |
+| Features | rich-edge |
+| Resize | center-crop |
+| Threshold | 0.1720 |
+| Similarity | Hamming |
+| Top-k | 7 |
+| Active blocks | 0x7e57, 11 of 16 |
+
+Interpretation: the richer genetic search can overfit the validation split more
+effectively, but the held-out eval gain is still modest. The next useful
+research change is multi-split fitness, not simply more population.
 
 For the local Intel i9-14900 / 32-thread machine, larger searches should use
 `--threads 32`. The RTX 5090 is noted for future GPU work, but the current

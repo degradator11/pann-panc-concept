@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::vision::{ImageFeatureMode, ImageResizeMode};
 
+pub const FEATURE_BLOCK_COUNT: usize = 16;
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PancGenome {
     pub image_size: u32,
@@ -11,6 +13,8 @@ pub struct PancGenome {
     pub threshold: f64,
     pub jaccard_weight: f64,
     pub top_k: usize,
+    #[serde(default = "default_active_blocks")]
+    pub active_blocks: u32,
 }
 
 impl PancGenome {
@@ -22,6 +26,7 @@ impl PancGenome {
             threshold: rng.gen_range(space.threshold_min..=space.threshold_max),
             jaccard_weight: rng.gen_range(0.0..=1.0),
             top_k: pick(&space.top_k_values, rng),
+            active_blocks: random_block_mask(rng),
         }
     }
 
@@ -57,6 +62,7 @@ impl PancGenome {
             } else {
                 other.top_k
             },
+            active_blocks: crossover_block_mask(self.active_blocks, other.active_blocks, rng),
         }
     }
 
@@ -83,6 +89,10 @@ impl PancGenome {
             let delta = rng.gen_range(-0.25..=0.25);
             self.jaccard_weight = (self.jaccard_weight + delta).clamp(0.0, 1.0);
         }
+        if rng.gen_bool(rate) {
+            mutate_block_mask(&mut self.active_blocks, rng);
+        }
+        self.active_blocks = normalize_block_mask(self.active_blocks);
     }
 
     pub fn similarity_name(self) -> &'static str {
@@ -94,6 +104,14 @@ impl PancGenome {
             "hamming_jaccard_blend"
         }
     }
+
+    pub fn active_block_count(self) -> usize {
+        normalize_block_mask(self.active_blocks).count_ones() as usize
+    }
+}
+
+fn default_active_blocks() -> u32 {
+    all_blocks_mask()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -180,9 +198,17 @@ pub fn predict_panc_binary_batch(
 ) -> Vec<usize> {
     let library = pack_samples(library_samples, genome.threshold);
     let queries = pack_samples(query_samples, genome.threshold);
+    let mask = ComparisonMask::new(
+        library
+            .first()
+            .or_else(|| queries.first())
+            .map(|sample| sample.len)
+            .unwrap_or(0),
+        genome.active_blocks,
+    );
     queries
         .iter()
-        .map(|query| predict_one(&library, library_labels, query, class_count, genome))
+        .map(|query| predict_one(&library, library_labels, query, class_count, genome, &mask))
         .collect()
 }
 
@@ -192,11 +218,12 @@ fn predict_one(
     query: &PackedBinaryVector,
     class_count: usize,
     genome: PancGenome,
+    mask: &ComparisonMask,
 ) -> usize {
     let mut top = Vec::<(f64, usize)>::new();
     let top_k = genome.top_k.max(1);
     for (reference, label) in library.iter().zip(labels) {
-        let score = blended_similarity(query, reference, genome.jaccard_weight);
+        let score = blended_similarity(query, reference, genome.jaccard_weight, mask);
         push_top_candidate(&mut top, (score, *label), top_k);
     }
 
@@ -248,15 +275,20 @@ fn blended_similarity(
     left: &PackedBinaryVector,
     right: &PackedBinaryVector,
     jaccard_weight: f64,
+    mask: &ComparisonMask,
 ) -> f64 {
     let jaccard_weight = jaccard_weight.clamp(0.0, 1.0);
-    let hamming = hamming_similarity(left, right);
-    let jaccard = jaccard_similarity(left, right);
+    let hamming = hamming_similarity(left, right, mask);
+    let jaccard = jaccard_similarity(left, right, mask);
     hamming * (1.0 - jaccard_weight) + jaccard * jaccard_weight
 }
 
-fn hamming_similarity(left: &PackedBinaryVector, right: &PackedBinaryVector) -> f64 {
-    if left.len == 0 {
+fn hamming_similarity(
+    left: &PackedBinaryVector,
+    right: &PackedBinaryVector,
+    mask: &ComparisonMask,
+) -> f64 {
+    if mask.selected_bits == 0 {
         return 0.0;
     }
 
@@ -264,17 +296,22 @@ fn hamming_similarity(left: &PackedBinaryVector, right: &PackedBinaryVector) -> 
         .words
         .iter()
         .zip(&right.words)
-        .map(|(left, right)| (left ^ right).count_ones() as usize)
+        .zip(&mask.word_masks)
+        .map(|((left, right), mask)| ((left ^ right) & mask).count_ones() as usize)
         .sum::<usize>();
-    (left.len - mismatches.min(left.len)) as f64 / left.len as f64
+    (mask.selected_bits - mismatches.min(mask.selected_bits)) as f64 / mask.selected_bits as f64
 }
 
-fn jaccard_similarity(left: &PackedBinaryVector, right: &PackedBinaryVector) -> f64 {
+fn jaccard_similarity(
+    left: &PackedBinaryVector,
+    right: &PackedBinaryVector,
+    mask: &ComparisonMask,
+) -> f64 {
     let mut intersection = 0usize;
     let mut union = 0usize;
-    for (left, right) in left.words.iter().zip(&right.words) {
-        intersection += (left & right).count_ones() as usize;
-        union += (left | right).count_ones() as usize;
+    for ((left, right), mask) in left.words.iter().zip(&right.words).zip(&mask.word_masks) {
+        intersection += (left & right & mask).count_ones() as usize;
+        union += ((left | right) & mask).count_ones() as usize;
     }
 
     if union == 0 {
@@ -295,6 +332,45 @@ fn packed_memory_bytes(samples: &[Vec<f64>], threshold: f64) -> usize {
 struct PackedBinaryVector {
     len: usize,
     words: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComparisonMask {
+    word_masks: Vec<u64>,
+    selected_bits: usize,
+}
+
+impl ComparisonMask {
+    fn new(feature_len: usize, active_blocks: u32) -> Self {
+        if feature_len == 0 {
+            return Self {
+                word_masks: Vec::new(),
+                selected_bits: 0,
+            };
+        }
+
+        let active_blocks = normalize_block_mask(active_blocks);
+        let mut word_masks = vec![0_u64; feature_len.div_ceil(64)];
+        for block in 0..FEATURE_BLOCK_COUNT {
+            if (active_blocks & (1_u32 << block)) == 0 {
+                continue;
+            }
+            let start = feature_len * block / FEATURE_BLOCK_COUNT;
+            let end = feature_len * (block + 1) / FEATURE_BLOCK_COUNT;
+            for bit in start..end {
+                word_masks[bit / 64] |= 1_u64 << (bit % 64);
+            }
+        }
+
+        let selected_bits = word_masks
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum::<usize>();
+        Self {
+            word_masks,
+            selected_bits,
+        }
+    }
 }
 
 fn pack_samples(samples: &[Vec<f64>], threshold: f64) -> Vec<PackedBinaryVector> {
@@ -321,6 +397,60 @@ fn pick<T: Copy>(values: &[T], rng: &mut impl Rng) -> T {
     values[rng.gen_range(0..values.len())]
 }
 
+pub fn all_blocks_mask() -> u32 {
+    (1_u32 << FEATURE_BLOCK_COUNT) - 1
+}
+
+pub fn normalize_block_mask(mask: u32) -> u32 {
+    let mask = mask & all_blocks_mask();
+    if mask == 0 { all_blocks_mask() } else { mask }
+}
+
+pub fn format_block_mask(mask: u32) -> String {
+    format!("0x{:04x}", normalize_block_mask(mask))
+}
+
+fn random_block_mask(rng: &mut impl Rng) -> u32 {
+    if rng.gen_bool(0.25) {
+        return all_blocks_mask();
+    }
+
+    let mut mask = 0_u32;
+    for block in 0..FEATURE_BLOCK_COUNT {
+        if rng.gen_bool(0.65) {
+            mask |= 1_u32 << block;
+        }
+    }
+    normalize_block_mask(mask)
+}
+
+fn crossover_block_mask(left: u32, right: u32, rng: &mut impl Rng) -> u32 {
+    let mut mask = 0_u32;
+    for block in 0..FEATURE_BLOCK_COUNT {
+        let bit = 1_u32 << block;
+        if rng.gen_bool(0.5) {
+            mask |= left & bit;
+        } else {
+            mask |= right & bit;
+        }
+    }
+    normalize_block_mask(mask)
+}
+
+fn mutate_block_mask(mask: &mut u32, rng: &mut impl Rng) {
+    if rng.gen_bool(0.15) {
+        *mask = all_blocks_mask();
+        return;
+    }
+
+    let toggles = rng.gen_range(1..=3);
+    for _ in 0..toggles {
+        let block = rng.gen_range(0..FEATURE_BLOCK_COUNT);
+        *mask ^= 1_u32 << block;
+    }
+    *mask = normalize_block_mask(*mask);
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
@@ -341,6 +471,7 @@ mod tests {
             threshold: 0.5,
             jaccard_weight: 0.5,
             top_k: 1,
+            active_blocks: all_blocks_mask(),
         };
 
         let evaluation =
@@ -373,6 +504,45 @@ mod tests {
             assert!(space.top_k_values.contains(&genome.top_k));
             assert!((0.2..=0.8).contains(&genome.threshold));
             assert!((0.0..=1.0).contains(&genome.jaccard_weight));
+            assert_ne!(genome.active_blocks, 0);
+            assert_eq!(genome.active_blocks & !all_blocks_mask(), 0);
         }
+    }
+
+    #[test]
+    fn block_mask_can_ignore_unhelpful_descriptor_region() {
+        let mut class_zero = vec![0.0; FEATURE_BLOCK_COUNT];
+        class_zero[0] = 1.0;
+        class_zero[1] = 1.0;
+        class_zero[14] = 0.0;
+        class_zero[15] = 0.0;
+        let mut class_one = vec![0.0; FEATURE_BLOCK_COUNT];
+        class_one[0] = 0.0;
+        class_one[1] = 0.0;
+        class_one[14] = 1.0;
+        class_one[15] = 1.0;
+        let mut query = class_zero.clone();
+        query[14] = 1.0;
+        query[15] = 1.0;
+
+        let library = vec![class_zero, class_one];
+        let labels = vec![0, 1];
+        let queries = vec![query];
+        let query_labels = vec![0];
+        let genome = PancGenome {
+            image_size: 4,
+            feature_mode: ImageFeatureMode::Pixels,
+            resize_mode: ImageResizeMode::Stretch,
+            threshold: 0.5,
+            jaccard_weight: 0.0,
+            top_k: 1,
+            active_blocks: 0b0000_0000_0000_0011,
+        };
+
+        let evaluation =
+            evaluate_panc_binary(&library, &labels, &queries, &query_labels, 2, genome);
+
+        assert_eq!(evaluation.predictions, vec![0]);
+        assert_eq!(evaluation.accuracy, 1.0);
     }
 }

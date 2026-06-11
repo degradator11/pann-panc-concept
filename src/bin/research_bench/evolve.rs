@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Instant;
 
+use progress_ai::evolution::panc::format_block_mask;
 use progress_ai::evolution::{
     EvolutionConfig, PancBinaryEvaluation, PancGenome, PancGenomeSpace, ScoredGenome,
     evaluate_panc_binary, evaluate_population_parallel,
@@ -232,6 +233,8 @@ fn evaluate_generation_row(
         similarity: genome.similarity,
         jaccard_weight: genome.jaccard_weight,
         top_k: genome.top_k,
+        active_blocks: genome.active_blocks,
+        active_block_count: genome.active_block_count,
     })
 }
 
@@ -302,6 +305,8 @@ fn genome_report(genome: PancGenome) -> EvolvedPancGenomeReport {
         similarity: genome.similarity_name().to_string(),
         jaccard_weight: genome.jaccard_weight,
         top_k: genome.top_k,
+        active_blocks: format_block_mask(genome.active_blocks),
+        active_block_count: genome.active_block_count(),
     }
 }
 

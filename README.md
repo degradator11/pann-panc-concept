@@ -455,6 +455,7 @@ The search currently evolves:
 - binary threshold
 - Hamming/Jaccard similarity blend
 - top-k vote size
+- a 16-block descriptor mask, which lets evolution ignore weak feature regions
 
 It builds an analogue library from the training folder, scores genomes on a
 validation split from that same training folder, and uses `--eval-data` only for
@@ -469,7 +470,7 @@ cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\d
 Larger workstation run:
 
 ```powershell
-cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out models\evolved-panc-cats-dogs.json --population 64 --generations 50 --threads 32 --evolve-image-sizes 64,128 --evolve-features rich,rich-texture,rich-hog,rich-edge,rich-layout --evolve-resize-modes center-crop,foreground-crop --evolve-top-k 1,3,5,7 --format json
+cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out models\evolved-panc-cats-dogs.json --population 5000 --generations 50 --threads 32 --evolve-image-sizes 64,128 --evolve-features rich,rich-texture,rich-hog,rich-edge,rich-layout --evolve-resize-modes center-crop,foreground-crop --evolve-top-k 1,3,5,7 --memory-penalty-per-mb 0 --inference-penalty-per-ms 0 --format json
 ```
 
 For the noted Intel i9-14900 workstation, `--threads 32` is appropriate. The
@@ -485,6 +486,19 @@ models\name.history.csv   best genome per generation
 The generation history is the first thing to inspect. A useful run should show
 validation accuracy improving or stabilizing above random search, not merely a
 single lucky generation.
+
+Current medium Cats/Dogs result with descriptor-block masking, population 5000,
+50 generations, and 32 threads:
+
+```text
+validation_accuracy = 80.84%
+eval_accuracy       = 75.91%
+best setting        = 128px rich-edge center-crop, Hamming, top-k 7
+active_blocks       = 0x7e57, 11 of 16 blocks
+```
+
+This is a useful search improvement, but still not a breakthrough: the held-out
+eval gain over earlier evolved settings is small.
 
 ### Learning Curve Reports
 

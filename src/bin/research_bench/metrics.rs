@@ -235,6 +235,8 @@ pub struct EvolvedPancGenomeReport {
     pub similarity: String,
     pub jaccard_weight: f64,
     pub top_k: usize,
+    pub active_blocks: String,
+    pub active_block_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -251,6 +253,8 @@ pub struct EvolutionGenerationRow {
     pub similarity: String,
     pub jaccard_weight: f64,
     pub top_k: usize,
+    pub active_blocks: String,
+    pub active_block_count: usize,
 }
 
 #[derive(Debug, Clone)]
