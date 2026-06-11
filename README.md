@@ -241,14 +241,15 @@ assert_eq!(vector.len(), 32 * 32);
 ## Project Layout
 
 ```text
-src\pann.rs                    PANN-like model and training logic
-src\panc.rs                    PANC-like dense and binary comparators
-src\preprocess.rs              Dataset preprocessing utilities
-src\vision.rs                  Image loading and vectorization utilities
-src\bin\research-bench.rs      Benchmark CLI
-tests\research_integration.rs  Synthetic integration tests
-data\iris.csv                  Local Iris benchmark data
-technology-implementation\     Public-source analysis and implementation notes
+src\pann\                       PANN-like config, model, activation, training
+src\panc\                       PANC-like dense and binary comparators
+src\preprocess.rs               Dataset preprocessing utilities
+src\vision.rs                   Image loading and vectorization utilities
+src\bin\research-bench.rs       Benchmark CLI entrypoint
+src\bin\research_bench\         Benchmark args, datasets, metrics, runners
+tests\research_integration.rs   Synthetic integration tests
+data\iris.csv                   Local Iris benchmark data
+technology-implementation\      Public-source analysis and implementation notes
 ```
 
 ## Git Push Helper
