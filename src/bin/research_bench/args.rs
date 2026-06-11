@@ -1,7 +1,7 @@
 use std::env;
 use std::error::Error;
 
-use progress_ai::vision::{ImageFeatureMode, ImageVectorConfig};
+use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, ImageVectorConfig};
 
 #[derive(Debug, Clone)]
 pub struct Args {
@@ -18,6 +18,7 @@ pub struct Args {
     pub image_width: u32,
     pub image_height: u32,
     pub image_features: ImageFeatureMode,
+    pub image_resize: ImageResizeMode,
     pub samples_per_class: usize,
     pub top_k: usize,
     pub target_mse: Option<f64>,
@@ -26,6 +27,7 @@ pub struct Args {
     pub matrix_image_sizes: Vec<u32>,
     pub matrix_intervals: Vec<usize>,
     pub matrix_seeds: Vec<u64>,
+    pub matrix_resize_modes: Vec<ImageResizeMode>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +45,7 @@ pub enum MatrixModel {
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined,rich] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich] [--image-resize stretch|center-crop|letterbox] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined,rich] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox]",
     )?;
 
     let mut args = Args {
@@ -60,6 +62,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         image_width: 16,
         image_height: 16,
         image_features: ImageFeatureMode::Pixels,
+        image_resize: ImageResizeMode::Stretch,
         samples_per_class: 80,
         top_k: 3,
         target_mse: None,
@@ -68,6 +71,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         matrix_image_sizes: Vec::new(),
         matrix_intervals: Vec::new(),
         matrix_seeds: Vec::new(),
+        matrix_resize_modes: Vec::new(),
     };
 
     while let Some(flag) = raw.next() {
@@ -130,6 +134,12 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .ok_or("--image-features requires a value")?
                     .parse::<ImageFeatureMode>()?;
             }
+            "--image-resize" => {
+                args.image_resize = raw
+                    .next()
+                    .ok_or("--image-resize requires a value")?
+                    .parse::<ImageResizeMode>()?;
+            }
             "--samples-per-class" => {
                 args.samples_per_class = raw
                     .next()
@@ -170,6 +180,11 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                 args.matrix_seeds =
                     parse_number_list(&raw.next().ok_or("--matrix-seeds requires a value")?)?;
             }
+            "--matrix-resize-modes" => {
+                args.matrix_resize_modes = parse_image_resize_modes_list(
+                    &raw.next().ok_or("--matrix-resize-modes requires a value")?,
+                )?;
+            }
             other => return Err(format!("unknown option {other}").into()),
         }
     }
@@ -192,6 +207,13 @@ fn parse_image_features_list(value: &str) -> Result<Vec<ImageFeatureMode>, Box<d
     split_csv_values(value)
         .into_iter()
         .map(|feature| feature.parse::<ImageFeatureMode>().map_err(Into::into))
+        .collect()
+}
+
+fn parse_image_resize_modes_list(value: &str) -> Result<Vec<ImageResizeMode>, Box<dyn Error>> {
+    split_csv_values(value)
+        .into_iter()
+        .map(|mode| mode.parse::<ImageResizeMode>().map_err(Into::into))
         .collect()
 }
 
@@ -218,6 +240,7 @@ fn split_csv_values(value: &str) -> Vec<&str> {
 pub fn image_config(args: &Args) -> ImageVectorConfig {
     ImageVectorConfig::new(args.image_width, args.image_height)
         .with_feature_mode(args.image_features)
+        .with_resize_mode(args.image_resize)
 }
 
 pub fn required_data_path(args: &Args) -> Result<&str, Box<dyn Error>> {

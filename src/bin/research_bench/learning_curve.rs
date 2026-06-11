@@ -54,6 +54,7 @@ pub fn run_pann_learning_curve(args: &Args) -> Result<CommandOutput, Box<dyn Err
         model: "pann".to_string(),
         dataset: "image-folder".to_string(),
         image_features: args.image_features.as_str().to_string(),
+        image_resize: args.image_resize.as_str().to_string(),
         report_path: args.out_path.clone(),
         target_mse: args.target_mse,
         epochs_requested: args.epochs,

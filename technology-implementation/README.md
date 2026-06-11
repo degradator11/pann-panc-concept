@@ -62,14 +62,22 @@ The `rich` mode is the current strongest Cats/Dogs classical baseline because
 it adds HSV histograms, color moments, and local binary pattern texture
 features before PANN/PANC processing.
 
+Image preprocessing now also supports `--image-resize stretch`,
+`center-crop`, and `letterbox`. Stretch is the default historical behavior.
+Center crop and letterbox are intended for normalization experiments on
+real-world photo datasets where aspect ratio and object framing may affect
+generalization.
+
 The benchmark CLI also supports persistent image artifacts with
 `train-pann-image-folder`, `eval-pann`, `predict-pann`,
 `train-panc-image-folder`, `eval-panc`, and `predict-panc`. See the root
-README's artifact section for the full command examples.
+README's artifact section for the full command examples. Artifact evaluation
+reports per-class accuracy, a confusion matrix, and a short list of
+misclassified image paths for diagnostics.
 
 For repeatable sweeps, use `image-matrix` to compare models, feature modes,
-image sizes, intervals, and seeds while writing CSV or JSON reports under the
-ignored `reports/` directory.
+image sizes, resize modes, intervals, and seeds while writing CSV or JSON
+reports under the ignored `reports/` directory.
 
 The public Progress tests page reports target MSE, epoch/error, and training
 time. The prototype mirrors that reporting style with `pann-learning-curve`,

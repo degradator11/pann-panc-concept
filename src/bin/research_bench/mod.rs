@@ -12,8 +12,8 @@ pub use args::{
     required_image_path, required_model_path, required_out_path,
 };
 pub use metrics::{
-    ArtifactMetrics, BenchMetrics, ClassScore, CommandOutput, EvalMetrics, LearningCurveReport,
-    LearningCurveRow, MatrixReport, MatrixRow, MatrixSummary, PredictionNeighbor, PredictionOutput,
-    write_output,
+    ArtifactMetrics, BenchMetrics, ClassScore, CommandOutput, ConfusionRow, EvalMetrics,
+    LearningCurveReport, LearningCurveRow, MatrixReport, MatrixRow, MatrixSummary,
+    MisclassifiedExample, PerClassAccuracy, PredictionNeighbor, PredictionOutput, write_output,
 };
 pub use run::run;

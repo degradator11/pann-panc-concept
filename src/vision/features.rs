@@ -1,7 +1,7 @@
-use image::imageops::FilterType;
-use image::{DynamicImage, GrayImage, RgbImage};
+use image::imageops::{FilterType, overlay};
+use image::{DynamicImage, GrayImage, Rgb, RgbImage};
 
-use super::{ImageFeatureMode, ImageVectorConfig};
+use super::{ImageFeatureMode, ImageResizeMode, ImageVectorConfig};
 
 const COLOR_BINS: usize = 8;
 const HSV_BINS: usize = 8;
@@ -19,7 +19,7 @@ pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN +
 pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
 
 pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) -> Vec<f64> {
-    let resized = image.resize_exact(config.width, config.height, FilterType::Triangle);
+    let resized = prepare_image(image, config);
     match config.feature_mode {
         ImageFeatureMode::Pixels => grayscale_pixels(&resized.to_luma8(), config.invert),
         ImageFeatureMode::ColorHistogram => color_histogram(&resized.to_rgb8(), config.invert),
@@ -66,6 +66,34 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
             features
         }
     }
+}
+
+fn prepare_image(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
+    match config.resize_mode {
+        ImageResizeMode::Stretch => {
+            image.resize_exact(config.width, config.height, FilterType::Triangle)
+        }
+        ImageResizeMode::CenterCrop => center_crop(image, config),
+        ImageResizeMode::Letterbox => letterbox(image, config),
+    }
+}
+
+fn center_crop(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
+    let crop_size = image.width().min(image.height()).max(1);
+    let left = (image.width().saturating_sub(crop_size)) / 2;
+    let top = (image.height().saturating_sub(crop_size)) / 2;
+    image
+        .crop_imm(left, top, crop_size, crop_size)
+        .resize_exact(config.width, config.height, FilterType::Triangle)
+}
+
+fn letterbox(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
+    let resized = image.resize(config.width, config.height, FilterType::Triangle);
+    let mut canvas = RgbImage::from_pixel(config.width, config.height, Rgb([127, 127, 127]));
+    let x = (config.width.saturating_sub(resized.width()) / 2) as i64;
+    let y = (config.height.saturating_sub(resized.height()) / 2) as i64;
+    overlay(&mut canvas, &resized.to_rgb8(), x, y);
+    DynamicImage::ImageRgb8(canvas)
 }
 
 pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConfig) -> Vec<f64> {

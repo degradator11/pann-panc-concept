@@ -4,7 +4,7 @@ use std::path::Path;
 
 use progress_ai::panc::SimilarityMetric;
 use progress_ai::pann::{FeatureRange, PannModelSnapshot};
-use progress_ai::vision::{ImageFeatureMode, ImageVectorConfig};
+use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, ImageVectorConfig};
 use serde::{Deserialize, Serialize};
 
 pub const ARTIFACT_VERSION: u32 = 1;
@@ -41,6 +41,8 @@ pub struct ImageArtifact {
     pub width: u32,
     pub height: u32,
     pub feature_mode: String,
+    #[serde(default = "default_resize_mode")]
+    pub resize_mode: String,
 }
 
 impl ImageArtifact {
@@ -49,6 +51,7 @@ impl ImageArtifact {
             width: config.width,
             height: config.height,
             feature_mode: config.feature_mode.as_str().to_string(),
+            resize_mode: config.resize_mode.as_str().to_string(),
         }
     }
 
@@ -57,8 +60,18 @@ impl ImageArtifact {
             .feature_mode
             .parse::<ImageFeatureMode>()
             .map_err(|error| format!("invalid artifact image feature mode: {error}"))?;
-        Ok(ImageVectorConfig::new(self.width, self.height).with_feature_mode(feature_mode))
+        let resize_mode = self
+            .resize_mode
+            .parse::<ImageResizeMode>()
+            .map_err(|error| format!("invalid artifact image resize mode: {error}"))?;
+        Ok(ImageVectorConfig::new(self.width, self.height)
+            .with_feature_mode(feature_mode)
+            .with_resize_mode(resize_mode))
     }
+}
+
+fn default_resize_mode() -> String {
+    ImageResizeMode::Stretch.as_str().to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

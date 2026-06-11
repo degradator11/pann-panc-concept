@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use progress_ai::panc::{PancComparator, SimilarityMetric};
@@ -9,19 +10,37 @@ use progress_ai::pann::{
 use progress_ai::preprocess::{
     Dataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split,
 };
-use progress_ai::vision::{load_image_as_vector, load_image_folder};
+use progress_ai::vision::{load_image_as_vector, load_image_folder, load_image_folder_with_paths};
 
 use super::artifacts::{
     ARTIFACT_VERSION, ImageArtifact, ModelArtifact, PancImageArtifact, PancReferenceArtifact,
     PannImageArtifact, PreprocessingArtifact, load_artifact, save_artifact,
 };
 use super::{
-    Args, ArtifactMetrics, ClassScore, CommandOutput, EvalMetrics, PredictionNeighbor,
-    PredictionOutput, image_config, required_data_path, required_image_path, required_model_path,
-    required_out_path,
+    Args, ArtifactMetrics, ClassScore, CommandOutput, ConfusionRow, EvalMetrics,
+    MisclassifiedExample, PerClassAccuracy, PredictionNeighbor, PredictionOutput, image_config,
+    required_data_path, required_image_path, required_model_path, required_out_path,
 };
 
-type ScaledLabeledSamples = (Vec<Vec<f64>>, Vec<usize>);
+const MAX_MISCLASSIFIED_EXAMPLES: usize = 25;
+
+struct ScaledEvalDataset {
+    samples: Vec<Vec<f64>>,
+    labels: Vec<usize>,
+    paths: Vec<PathBuf>,
+}
+
+struct PredictedClass {
+    index: usize,
+    score_margin: f64,
+}
+
+struct ClassificationDiagnostics {
+    accuracy: f64,
+    per_class_accuracy: Vec<PerClassAccuracy>,
+    confusion_matrix: Vec<ConfusionRow>,
+    misclassified_examples: Vec<MisclassifiedExample>,
+}
 
 pub fn train_pann_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
     let data_path = required_data_path(args)?;
@@ -65,6 +84,7 @@ pub fn train_pann_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Err
         model: "pann".to_string(),
         dataset: "image-folder".to_string(),
         image_features: args.image_features.as_str().to_string(),
+        image_resize: args.image_resize.as_str().to_string(),
         artifact_path: out_path.to_string(),
         train_accuracy,
         train_ms,
@@ -115,6 +135,7 @@ pub fn train_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Err
         model: "panc_like".to_string(),
         dataset: "image-folder".to_string(),
         image_features: args.image_features.as_str().to_string(),
+        image_resize: args.image_resize.as_str().to_string(),
         artifact_path: out_path.to_string(),
         train_accuracy,
         train_ms,
@@ -134,21 +155,41 @@ pub fn eval_pann(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
     validate_version(artifact.version)?;
 
     let model = PannModel::from_snapshot(artifact.model.clone())?;
-    let (samples, labels) = load_scaled_eval_dataset(data_path, &artifact)?;
+    let eval_dataset = load_scaled_eval_dataset(data_path, &artifact)?;
 
     let inference_start = Instant::now();
-    let accuracy = model.accuracy(&samples, &labels)?;
+    let predictions = eval_dataset
+        .samples
+        .iter()
+        .map(|sample| {
+            let outputs = model.forward(sample)?;
+            Ok(PredictedClass {
+                index: argmax(&outputs),
+                score_margin: score_margin(&outputs),
+            })
+        })
+        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     let inference_ms = inference_start.elapsed().as_millis();
+    let diagnostics = classification_diagnostics(
+        &eval_dataset.labels,
+        &predictions,
+        &eval_dataset.paths,
+        &artifact.class_names,
+    );
 
     Ok(CommandOutput::Eval(EvalMetrics {
         model: "pann".to_string(),
         dataset: "image-folder".to_string(),
         image_features: artifact.image.feature_mode,
+        image_resize: artifact.image.resize_mode,
         model_path: model_path.to_string(),
-        accuracy,
+        accuracy: diagnostics.accuracy,
         inference_ms,
         memory_bytes: model.memory_bytes_estimate(),
-        sample_count: samples.len(),
+        sample_count: eval_dataset.samples.len(),
+        per_class_accuracy: diagnostics.per_class_accuracy,
+        confusion_matrix: diagnostics.confusion_matrix,
+        misclassified_examples: diagnostics.misclassified_examples,
     }))
 }
 
@@ -160,23 +201,39 @@ pub fn eval_panc(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
     };
     validate_version(artifact.version)?;
 
-    let (samples, labels) = load_scaled_eval_dataset(data_path, &artifact)?;
+    let eval_dataset = load_scaled_eval_dataset(data_path, &artifact)?;
     let comparator = build_panc_comparator_from_artifact(&artifact)?;
 
     let inference_start = Instant::now();
-    let accuracy = panc_accuracy(&comparator, &samples, &labels, args.top_k)?;
+    let predictions = eval_dataset
+        .samples
+        .iter()
+        .map(|sample| {
+            panc_predict_with_margin(&comparator, sample, args.top_k, artifact.class_names.len())
+        })
+        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     let inference_ms = inference_start.elapsed().as_millis();
     let memory_bytes = panc_memory_bytes(&artifact.references);
+    let diagnostics = classification_diagnostics(
+        &eval_dataset.labels,
+        &predictions,
+        &eval_dataset.paths,
+        &artifact.class_names,
+    );
 
     Ok(CommandOutput::Eval(EvalMetrics {
         model: "panc_like".to_string(),
         dataset: "image-folder".to_string(),
         image_features: artifact.image.feature_mode,
+        image_resize: artifact.image.resize_mode,
         model_path: model_path.to_string(),
-        accuracy,
+        accuracy: diagnostics.accuracy,
         inference_ms,
         memory_bytes,
-        sample_count: samples.len(),
+        sample_count: eval_dataset.samples.len(),
+        per_class_accuracy: diagnostics.per_class_accuracy,
+        confusion_matrix: diagnostics.confusion_matrix,
+        misclassified_examples: diagnostics.misclassified_examples,
     }))
 }
 
@@ -240,11 +297,18 @@ pub fn predict_panc(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
 fn load_scaled_eval_dataset(
     data_path: &str,
     artifact: &impl ImageClassifierArtifact,
-) -> Result<ScaledLabeledSamples, Box<dyn Error>> {
-    let dataset = load_image_folder(data_path, artifact.image().to_config()?)?;
-    let labels = remap_labels_by_class_name(&dataset, artifact.class_names())?;
-    let samples = min_max_scale(&dataset.samples, &artifact.preprocessing().min_max_ranges);
-    Ok((samples, labels))
+) -> Result<ScaledEvalDataset, Box<dyn Error>> {
+    let image_dataset = load_image_folder_with_paths(data_path, artifact.image().to_config()?)?;
+    let labels = remap_labels_by_class_name(&image_dataset.dataset, artifact.class_names())?;
+    let samples = min_max_scale(
+        &image_dataset.dataset.samples,
+        &artifact.preprocessing().min_max_ranges,
+    );
+    Ok(ScaledEvalDataset {
+        samples,
+        labels,
+        paths: image_dataset.image_paths,
+    })
 }
 
 fn load_scaled_image(
@@ -324,6 +388,116 @@ fn panc_accuracy(
         }
     }
     Ok(correct as f64 / samples.len() as f64)
+}
+
+fn panc_predict_with_margin(
+    comparator: &PancComparator<usize>,
+    sample: &[f64],
+    k: usize,
+    class_count: usize,
+) -> Result<PredictedClass, Box<dyn Error>> {
+    let neighbors = comparator.top_k(sample, k.max(1))?;
+    let mut scores = vec![0.0; class_count];
+    for neighbor in neighbors {
+        if let Some(score) = scores.get_mut(neighbor.label) {
+            *score += neighbor.score;
+        }
+    }
+    Ok(PredictedClass {
+        index: argmax(&scores),
+        score_margin: score_margin(&scores),
+    })
+}
+
+fn classification_diagnostics(
+    labels: &[usize],
+    predictions: &[PredictedClass],
+    paths: &[PathBuf],
+    class_names: &[String],
+) -> ClassificationDiagnostics {
+    let class_count = class_names.len();
+    let mut confusion = vec![vec![0usize; class_count]; class_count];
+    let mut totals = vec![0usize; class_count];
+    let mut correct_by_class = vec![0usize; class_count];
+    let mut correct = 0usize;
+    let mut misclassified_examples = Vec::new();
+
+    for (index, (actual, prediction)) in labels.iter().zip(predictions).enumerate() {
+        if let Some(total) = totals.get_mut(*actual) {
+            *total += 1;
+        }
+        if let Some(row) = confusion.get_mut(*actual)
+            && let Some(cell) = row.get_mut(prediction.index)
+        {
+            *cell += 1;
+        }
+
+        if *actual == prediction.index {
+            correct += 1;
+            if let Some(class_correct) = correct_by_class.get_mut(*actual) {
+                *class_correct += 1;
+            }
+        } else if misclassified_examples.len() < MAX_MISCLASSIFIED_EXAMPLES {
+            misclassified_examples.push(MisclassifiedExample {
+                path: paths
+                    .get(index)
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| format!("sample-{index}")),
+                expected_index: *actual,
+                expected_label: label_name(class_names, *actual),
+                predicted_index: prediction.index,
+                predicted_label: label_name(class_names, prediction.index),
+                score_margin: prediction.score_margin,
+            });
+        }
+    }
+
+    let per_class_accuracy = class_names
+        .iter()
+        .enumerate()
+        .map(|(class_index, class_name)| {
+            let total = totals[class_index];
+            let class_correct = correct_by_class[class_index];
+            PerClassAccuracy {
+                class_index,
+                class_name: class_name.clone(),
+                correct: class_correct,
+                total,
+                accuracy: if total == 0 {
+                    0.0
+                } else {
+                    class_correct as f64 / total as f64
+                },
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let confusion_matrix = confusion
+        .into_iter()
+        .enumerate()
+        .map(|(actual_index, predicted_counts)| ConfusionRow {
+            actual_index,
+            actual_name: label_name(class_names, actual_index),
+            predicted_counts,
+        })
+        .collect::<Vec<_>>();
+
+    ClassificationDiagnostics {
+        accuracy: if labels.is_empty() {
+            0.0
+        } else {
+            correct as f64 / labels.len() as f64
+        },
+        per_class_accuracy,
+        confusion_matrix,
+        misclassified_examples,
+    }
+}
+
+fn score_margin(scores: &[f64]) -> f64 {
+    let mut sorted = scores.to_vec();
+    sorted.sort_by(|left, right| right.total_cmp(left));
+    sorted.first().copied().unwrap_or(0.0) - sorted.get(1).copied().unwrap_or(0.0)
 }
 
 fn class_scores(outputs: &[f64], class_names: &[String]) -> Vec<ClassScore> {

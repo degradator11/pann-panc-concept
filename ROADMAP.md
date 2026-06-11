@@ -17,6 +17,7 @@ The prototype can:
 - use separate image train/eval folders through `--eval-data`
 - skip corrupt image files during folder benchmarks
 - compare image feature modes: `pixels`, `color`, `hog`, `combined`, and `rich`
+- compare image resize modes: `stretch`, `center-crop`, and `letterbox`
 - report JSON or CSV metrics
 
 Current image recognition quality is early-stage. The pipeline works, but
@@ -49,6 +50,9 @@ not artifact persistence or simply running more epochs.
 - Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
 - Image benchmark matrix command with CSV/JSON report output
 - PANN learning-curve reports with epoch/MSE/accuracy/time rows
+- Image resize modes for stretch, center-crop, and letterbox preprocessing
+- Artifact eval diagnostics with per-class accuracy, confusion matrix, and a
+  short misclassified-image list
 - README dataset links and run instructions
 
 ## Current Working Interpretation
@@ -233,23 +237,31 @@ Implemented success criteria:
 - feature implementation remains deterministic and dependency-light
 - README and roadmap record the new best result
 
-## Next Milestone: Image Normalization And Diagnostics
+## In-Progress Milestone: Image Normalization And Diagnostics
 
 Goal: understand the remaining error and improve input normalization before
 adding pretrained embeddings.
 
-Planned work:
+Implemented in the first pass:
 
-- add explicit image resize modes:
+- explicit image resize modes:
   - `stretch`, the current behavior
   - `center-crop`, useful when the object is centered and background varies
   - `letterbox`, useful when aspect ratio should be preserved
-- store resize mode inside persisted image artifacts
-- add per-class accuracy output for image eval and matrix runs
-- add confusion matrix output
-- add optional misclassified-example report with path, expected label,
+- resize mode stored inside persisted image artifacts
+- `image-matrix` can sweep `--matrix-resize-modes`
+- artifact eval reports per-class accuracy
+- artifact eval reports confusion matrix output
+- artifact eval reports a short misclassified-example list with path, expected label,
   predicted label, and confidence/margin where available
+
+Remaining planned work:
+
+- add per-class accuracy output to matrix summaries, or add a separate
+  diagnostics report file for matrix runs
 - compare `rich` at 64px across interval counts, seeds, and resize modes
+- run the normalization matrix on the Cats/Dogs short dataset and record the
+  result snapshot
 
 Success criteria:
 

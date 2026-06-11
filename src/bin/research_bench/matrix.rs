@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
-use progress_ai::vision::{ImageFeatureMode, load_image_folder};
+use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, load_image_folder};
 
 use super::run::{run_panc, run_pann};
 use super::{
@@ -15,6 +15,7 @@ use super::{
 struct SummaryKey {
     model: String,
     image_features: String,
+    image_resize: String,
     image_size: u32,
     interval_count: usize,
 }
@@ -26,32 +27,44 @@ pub fn run_image_matrix(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
     let image_sizes = matrix_image_sizes(args);
     let intervals = matrix_intervals(args);
     let seeds = matrix_seeds(args);
+    let resize_modes = matrix_resize_modes(args);
 
     let mut rows = Vec::new();
     for model in models {
         for feature in &features {
-            for image_size in &image_sizes {
-                for seed in &seeds {
-                    match model {
-                        MatrixModel::Pann => {
-                            for interval_count in &intervals {
+            for resize_mode in &resize_modes {
+                for image_size in &image_sizes {
+                    for seed in &seeds {
+                        match model {
+                            MatrixModel::Pann => {
+                                for interval_count in &intervals {
+                                    let variant = variant_args(
+                                        args,
+                                        *feature,
+                                        *resize_mode,
+                                        *image_size,
+                                        *seed,
+                                        *interval_count,
+                                    );
+                                    let dataset =
+                                        load_image_folder(data_path, image_config(&variant))?;
+                                    let metrics = run_pann(dataset, "image-folder", &variant)?;
+                                    rows.push(row_from_metrics(&metrics, *image_size, *seed));
+                                }
+                            }
+                            MatrixModel::Panc => {
                                 let variant = variant_args(
                                     args,
                                     *feature,
+                                    *resize_mode,
                                     *image_size,
                                     *seed,
-                                    *interval_count,
+                                    0,
                                 );
                                 let dataset = load_image_folder(data_path, image_config(&variant))?;
-                                let metrics = run_pann(dataset, "image-folder", &variant)?;
+                                let metrics = run_panc(dataset, "image-folder", &variant)?;
                                 rows.push(row_from_metrics(&metrics, *image_size, *seed));
                             }
-                        }
-                        MatrixModel::Panc => {
-                            let variant = variant_args(args, *feature, *image_size, *seed, 0);
-                            let dataset = load_image_folder(data_path, image_config(&variant))?;
-                            let metrics = run_panc(dataset, "image-folder", &variant)?;
-                            rows.push(row_from_metrics(&metrics, *image_size, *seed));
                         }
                     }
                 }
@@ -77,6 +90,7 @@ pub fn run_image_matrix(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
 fn variant_args(
     args: &Args,
     feature: ImageFeatureMode,
+    resize_mode: ImageResizeMode,
     image_size: u32,
     seed: u64,
     interval_count: usize,
@@ -85,6 +99,7 @@ fn variant_args(
     variant.image_width = image_size;
     variant.image_height = image_size;
     variant.image_features = feature;
+    variant.image_resize = resize_mode;
     variant.seed = seed;
     variant.intervals = interval_count.max(1);
     variant
@@ -94,6 +109,7 @@ fn row_from_metrics(metrics: &super::BenchMetrics, image_size: u32, seed: u64) -
     MatrixRow {
         model: metrics.model.clone(),
         image_features: metrics.image_features.clone(),
+        image_resize: metrics.image_resize.clone(),
         image_size,
         seed,
         epochs: metrics.epochs,
@@ -113,6 +129,7 @@ fn summarize_rows(rows: &[MatrixRow]) -> Vec<MatrixSummary> {
             .entry(SummaryKey {
                 model: row.model.clone(),
                 image_features: row.image_features.clone(),
+                image_resize: row.image_resize.clone(),
                 image_size: row.image_size,
                 interval_count: row.interval_count,
             })
@@ -128,6 +145,7 @@ fn summarize_rows(rows: &[MatrixRow]) -> Vec<MatrixSummary> {
         left.model
             .cmp(&right.model)
             .then_with(|| left.image_features.cmp(&right.image_features))
+            .then_with(|| left.image_resize.cmp(&right.image_resize))
             .then_with(|| left.image_size.cmp(&right.image_size))
             .then_with(|| left.interval_count.cmp(&right.interval_count))
     });
@@ -158,6 +176,7 @@ fn summary_from_group(key: SummaryKey, rows: &[&MatrixRow]) -> MatrixSummary {
     MatrixSummary {
         model: key.model,
         image_features: key.image_features,
+        image_resize: key.image_resize,
         image_size: key.image_size,
         interval_count: key.interval_count,
         runs: rows.len(),
@@ -236,5 +255,13 @@ fn matrix_seeds(args: &Args) -> Vec<u64> {
         vec![args.seed]
     } else {
         args.matrix_seeds.clone()
+    }
+}
+
+fn matrix_resize_modes(args: &Args) -> Vec<ImageResizeMode> {
+    if args.matrix_resize_modes.is_empty() {
+        vec![args.image_resize]
+    } else {
+        args.matrix_resize_modes.clone()
     }
 }

@@ -99,6 +99,7 @@ pub(super) fn run_pann(
         model: "pann".to_string(),
         dataset: dataset_name.to_string(),
         image_features: metrics_image_features(dataset_name, args),
+        image_resize: metrics_image_resize(dataset_name, args),
         train_accuracy,
         test_accuracy,
         train_ms,
@@ -137,6 +138,7 @@ pub(super) fn run_panc(
         model: "panc_like".to_string(),
         dataset: dataset_name.to_string(),
         image_features: metrics_image_features(dataset_name, args),
+        image_resize: metrics_image_resize(dataset_name, args),
         train_accuracy,
         test_accuracy,
         train_ms,
@@ -210,6 +212,14 @@ fn remap_labels_by_class_name(
 fn metrics_image_features(dataset_name: &str, args: &Args) -> String {
     if dataset_name.starts_with("image") {
         args.image_features.as_str().to_string()
+    } else {
+        "none".to_string()
+    }
+}
+
+fn metrics_image_resize(dataset_name: &str, args: &Args) -> String {
+    if dataset_name.starts_with("image") {
+        args.image_resize.as_str().to_string()
     } else {
         "none".to_string()
     }

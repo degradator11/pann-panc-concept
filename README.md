@@ -99,6 +99,7 @@ Useful options:
 --image-size 16
 --image-width 16
 --image-height 16
+--image-resize stretch|center-crop|letterbox
 --samples-per-class 80
 ```
 
@@ -127,7 +128,7 @@ Images are converted into numeric vectors before being passed into PANN or
 PANC:
 
 ```text
-image -> resize -> grayscale pixels -> values in [0, 1] -> classifier
+image -> resize/normalize -> feature vector -> values in [0, 1] -> classifier
 ```
 
 For example, a 16x16 image becomes a vector with 256 values. With PANN and 8
@@ -172,6 +173,17 @@ additional `color` and `hog` modes are available for ablation runs.
 `--image-features rich` adds HSV histograms, RGB/HSV color moments, and local
 binary pattern texture features. It is currently the strongest classical
 feature mode for Cats/Dogs, at the cost of more memory and slower comparison.
+
+Resize modes control how non-square images become fixed-size vectors:
+
+```text
+--image-resize stretch       resize directly to width x height; default
+--image-resize center-crop   crop the central square, then resize
+--image-resize letterbox     preserve aspect ratio with neutral gray padding
+```
+
+The resize mode is part of the model's preprocessing. Artifact training stores
+it in the JSON file, and `eval-*` / `predict-*` reuse the saved mode.
 
 ## Real Image Datasets
 
@@ -289,6 +301,7 @@ train_ms          training/indexing time
 inference_ms      evaluation time
 memory_bytes      approximate model/reference memory
 image_features    image vectorization mode, or none for non-image datasets
+image_resize      resize/normalization mode, or none for non-image datasets
 ```
 
 For PANN, `epochs` and `interval_count` affect training directly. For PANC-like
@@ -304,13 +317,13 @@ feature modes, image sizes, interval counts, and random seeds.
 Small Cats/Dogs matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox --epochs 12
 ```
 
 Larger matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
 ```
 
 Notes:
@@ -318,6 +331,7 @@ Notes:
 - PANN runs once per interval count.
 - PANC-like comparison ignores interval count and runs once per
   model/feature/image-size/seed.
+- `--matrix-resize-modes` adds resize/normalization modes to the sweep.
 - CSV output contains per-run rows.
 - JSON output contains per-run rows plus grouped summaries with mean/min/max
   accuracy.
@@ -368,6 +382,14 @@ Evaluate the saved PANN artifact:
 cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval --format json
 ```
 
+Artifact evaluation JSON includes diagnostics:
+
+```text
+per_class_accuracy       accuracy, correct count, and total per class
+confusion_matrix         actual class rows with predicted-class counts
+misclassified_examples   first misclassified image paths with expected/predicted labels
+```
+
 Predict one image with the saved PANN artifact:
 
 ```powershell
@@ -383,9 +405,9 @@ cargo run --release --bin research-bench -- predict-panc --model models\cats-dog
 ```
 
 Artifact JSON stores model kind/version, class names, image size, feature mode,
-preprocessing ranges, and model data. PANN artifacts store weights and access
-counts. PANC-like artifacts store reference vectors and labels. Generated
-`models/` files are ignored by git.
+resize mode, preprocessing ranges, and model data. PANN artifacts store weights
+and access counts. PANC-like artifacts store reference vectors and labels.
+Generated `models/` files are ignored by git.
 
 ## Library Usage
 
@@ -454,9 +476,9 @@ let prediction = comparator.predict_label(&query, 1)?;
 Image vectorization example:
 
 ```rust
-use progress_ai::vision::{ImageVectorConfig, load_image_as_vector};
+use progress_ai::vision::{ImageResizeMode, ImageVectorConfig, load_image_as_vector};
 
-let config = ImageVectorConfig::new(32, 32);
+let config = ImageVectorConfig::new(32, 32).with_resize_mode(ImageResizeMode::Letterbox);
 let vector = load_image_as_vector("digit.png", config)?;
 assert_eq!(vector.len(), 32 * 32);
 ```

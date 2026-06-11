@@ -18,6 +18,7 @@ pub struct ImageVectorConfig {
     pub height: u32,
     pub invert: bool,
     pub feature_mode: ImageFeatureMode,
+    pub resize_mode: ImageResizeMode,
 }
 
 impl ImageVectorConfig {
@@ -27,6 +28,7 @@ impl ImageVectorConfig {
             height,
             invert: false,
             feature_mode: ImageFeatureMode::Pixels,
+            resize_mode: ImageResizeMode::Stretch,
         }
     }
 
@@ -36,6 +38,11 @@ impl ImageVectorConfig {
 
     pub const fn with_feature_mode(mut self, feature_mode: ImageFeatureMode) -> Self {
         self.feature_mode = feature_mode;
+        self
+    }
+
+    pub const fn with_resize_mode(mut self, resize_mode: ImageResizeMode) -> Self {
+        self.resize_mode = resize_mode;
         self
     }
 
@@ -88,6 +95,38 @@ impl FromStr for ImageFeatureMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageResizeMode {
+    Stretch,
+    CenterCrop,
+    Letterbox,
+}
+
+impl ImageResizeMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Stretch => "stretch",
+            Self::CenterCrop => "center-crop",
+            Self::Letterbox => "letterbox",
+        }
+    }
+}
+
+impl FromStr for ImageResizeMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "stretch" | "resize" | "resize-exact" => Ok(Self::Stretch),
+            "center-crop" | "centercrop" | "crop" => Ok(Self::CenterCrop),
+            "letterbox" | "contain" | "pad" | "padding" => Ok(Self::Letterbox),
+            other => Err(format!(
+                "invalid image resize mode {other:?}; expected stretch, center-crop, or letterbox"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum VisionError {
     #[error("image width and height must be greater than zero")]
@@ -127,6 +166,13 @@ pub fn load_image_folder(
     root: impl AsRef<Path>,
     config: ImageVectorConfig,
 ) -> Result<Dataset, VisionError> {
+    Ok(load_image_folder_with_paths(root, config)?.dataset)
+}
+
+pub fn load_image_folder_with_paths(
+    root: impl AsRef<Path>,
+    config: ImageVectorConfig,
+) -> Result<ImageFolderDataset, VisionError> {
     validate_config(config)?;
     let root = root.as_ref();
     if !root.exists() {
@@ -155,6 +201,7 @@ pub fn load_image_folder(
     let mut samples = Vec::new();
     let mut labels = Vec::new();
     let mut class_names = Vec::new();
+    let mut image_paths = Vec::new();
 
     for class_dir in class_dirs {
         let class_name = class_dir.file_name().to_string_lossy().to_string();
@@ -180,10 +227,12 @@ pub fn load_image_folder(
         let sample_count_before = samples.len();
         let mut skipped_images = 0usize;
         for image_file in image_files {
-            match load_image_as_vector(image_file.path(), config) {
+            let image_path = image_file.path();
+            match load_image_as_vector(&image_path, config) {
                 Ok(sample) => {
                     samples.push(sample);
                     labels.push(label);
+                    image_paths.push(image_path);
                 }
                 Err(VisionError::DecodeImage { .. }) => skipped_images += 1,
                 Err(error) => return Err(error),
@@ -203,11 +252,20 @@ pub fn load_image_folder(
         return Err(VisionError::NoImages);
     }
 
-    Ok(Dataset {
-        samples,
-        labels,
-        class_names,
+    Ok(ImageFolderDataset {
+        dataset: Dataset {
+            samples,
+            labels,
+            class_names,
+        },
+        image_paths,
     })
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageFolderDataset {
+    pub dataset: Dataset,
+    pub image_paths: Vec<PathBuf>,
 }
 
 pub fn synthetic_image_dataset(
@@ -317,7 +375,7 @@ fn supported_image_path(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{GrayImage, Luma};
+    use image::{GrayImage, Luma, Rgb, RgbImage};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -355,6 +413,52 @@ mod tests {
 
         assert_eq!(dataset.samples[0].len(), config.vector_len());
         assert_eq!(config.vector_len(), 476);
+    }
+
+    #[test]
+    fn resize_mode_parses_expected_aliases() {
+        assert_eq!(
+            "stretch".parse::<ImageResizeMode>().unwrap(),
+            ImageResizeMode::Stretch
+        );
+        assert_eq!(
+            "crop".parse::<ImageResizeMode>().unwrap(),
+            ImageResizeMode::CenterCrop
+        );
+        assert_eq!(
+            "contain".parse::<ImageResizeMode>().unwrap(),
+            ImageResizeMode::Letterbox
+        );
+    }
+
+    #[test]
+    fn letterbox_resize_preserves_aspect_with_neutral_padding() {
+        let root = std::env::temp_dir().join(format!(
+            "progress_ai_letterbox_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let image_path = root.join("wide.png");
+        let image = RgbImage::from_pixel(4, 2, Rgb([255, 255, 255]));
+        image.save(&image_path).unwrap();
+
+        let stretch = load_image_as_vector(&image_path, ImageVectorConfig::new(4, 4)).unwrap();
+        let letterbox = load_image_as_vector(
+            &image_path,
+            ImageVectorConfig::new(4, 4).with_resize_mode(ImageResizeMode::Letterbox),
+        )
+        .unwrap();
+
+        assert!(stretch.iter().all(|value| *value > 0.99));
+        assert!(letterbox[0] > 0.49 && letterbox[0] < 0.51);
+        assert!(letterbox[5] > 0.99);
+        assert!(letterbox[10] > 0.99);
+        assert!(letterbox[15] > 0.49 && letterbox[15] < 0.51);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
