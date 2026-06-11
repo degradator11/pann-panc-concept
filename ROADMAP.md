@@ -19,6 +19,8 @@ The prototype can:
 - compare image feature modes: `pixels`, `color`, `hog`, `combined`, and `rich`
 - compare image resize modes: `stretch`, `center-crop`, and `letterbox`
 - report JSON or CSV metrics
+- write static image eval debug reports with original/processed images,
+  prediction rows, scaled feature vectors, and HTML summary
 
 Current image recognition quality is early-stage. The pipeline works, but
 Cats/Dogs accuracy is still modest with classical features.
@@ -53,6 +55,9 @@ not artifact persistence or simply running more epochs.
 - Image resize modes for stretch, center-crop, and letterbox preprocessing
 - Artifact eval diagnostics with per-class accuracy, confusion matrix, and a
   short misclassified-image list
+- Static debug reports for image artifact eval via `--debug-out`
+- Failure-analysis report v2 with ranked wrong examples, image buckets, resize
+  sensitivity, and nearest training examples
 - README dataset links and run instructions
 
 ## Current Working Interpretation
@@ -254,6 +259,24 @@ Implemented in the first pass:
 - artifact eval reports confusion matrix output
 - artifact eval reports a short misclassified-example list with path, expected label,
   predicted label, and confidence/margin where available
+- artifact eval can write static debug reports:
+  - `index.html`
+  - `config.json`
+  - `metrics.json`
+  - `failure_analysis.json`
+  - `failure_buckets.csv`
+  - `predictions.csv` and `predictions.json`
+  - `per_class_accuracy.csv`
+  - `confusion_matrix.csv`
+  - selected sample folders with original/processed images
+  - scaled feature vector CSVs
+- debug reports now rank high-confidence wrong and ambiguous wrong samples
+- debug reports bucket failures by brightness, contrast, orientation, and
+  center-crop loss
+- debug reports compare stretch, center-crop, and letterbox predictions for
+  selected samples
+- debug reports can show nearest training images in the same scaled feature
+  space through inferred or explicit train-data folders
 
 Remaining planned work:
 
@@ -262,11 +285,17 @@ Remaining planned work:
 - compare `rich` at 64px across interval counts, seeds, and resize modes
 - run the normalization matrix on the Cats/Dogs short dataset and record the
   result snapshot
+- optionally add an interactive UI later if the static report is still not
+  enough
 
 Success criteria:
 
 - report shows whether Cat or Dog is driving most errors
 - report includes enough image paths to inspect repeated failure patterns
+- report makes preprocessing mistakes visible by comparing original and
+  processed images
+- report answers which failure modes are most suspicious without manually
+  opening every sample folder
 - resize/crop mode gives a repeatable gain, or is documented as not helpful
 - best Cats/Dogs eval accuracy improves beyond the current 65.9% best run
 
@@ -284,7 +313,8 @@ Planned benchmark improvements:
 - add optional top-N report sorting
 - add train-vs-eval overfit summary to matrix reports
 - add best-row summary for matrix CSV/JSON runs
-- add optional misclassification report path for image evaluation
+- add debug-report support to in-memory folder benchmarks, not only artifact
+  evaluation
 
 ## Feature Roadmap
 

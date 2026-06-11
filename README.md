@@ -101,6 +101,11 @@ Useful options:
 --image-height 16
 --image-resize stretch|center-crop|letterbox
 --samples-per-class 80
+--debug-out reports\debug-folder
+--debug-train-data path\to\train-folder
+--debug-limit 50
+--debug-samples misclassified|all|correct
+--debug-neighbors 5
 ```
 
 The built-in Iris dataset is stored at:
@@ -389,6 +394,57 @@ per_class_accuracy       accuracy, correct count, and total per class
 confusion_matrix         actual class rows with predicted-class counts
 misclassified_examples   first misclassified image paths with expected/predicted labels
 ```
+
+Generate a static debug report during artifact evaluation:
+
+```powershell
+cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval --debug-out reports\cats-dogs-debug --debug-limit 50 --debug-samples misclassified --format json
+```
+
+If the eval folder is named `Eval`, the command tries to infer the training
+folder from its parent for nearest-neighbor examples. You can also pass it
+explicitly:
+
+```powershell
+cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval --debug-train-data C:\datasets\cats-dogs\train --debug-out reports\cats-dogs-debug --debug-neighbors 5 --format json
+```
+
+The debug folder contains a static failure-analysis report:
+
+```text
+reports\cats-dogs-debug\
+  index.html
+  config.json
+  metrics.json
+  failure_analysis.json
+  failure_buckets.csv
+  predictions.csv
+  predictions.json
+  per_class_accuracy.csv
+  confusion_matrix.csv
+  samples\
+    0000_expected_Cat_predicted_Dog_3000\
+      step_0_original.png
+      step_1_center_crop.png
+      step_2_resize_exact.png
+      step_3_scaled_feature_vector.csv
+      neighbor_0_Cat_123.png
+      summary.json
+```
+
+Open `index.html` to see:
+
+- weakest class and most common confusion
+- high-confidence wrong examples
+- ambiguous wrong examples
+- brightness/contrast/aspect/crop-loss failure buckets
+- stretch vs center-crop vs letterbox prediction sensitivity
+- nearest training examples in the same scaled feature space
+- original vs processed image for selected samples
+
+`--debug-samples misclassified` now selects a mix of high-confidence wrong and
+ambiguous wrong examples. `all` exports the first matching samples regardless
+of correctness; `correct` exports only correct predictions.
 
 Predict one image with the saved PANN artifact:
 

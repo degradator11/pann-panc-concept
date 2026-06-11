@@ -75,6 +75,16 @@ README's artifact section for the full command examples. Artifact evaluation
 reports per-class accuracy, a confusion matrix, and a short list of
 misclassified image paths for diagnostics.
 
+Artifact evaluation can also write a static debug report with `--debug-out`.
+The report includes `index.html`, prediction CSV/JSON files, per-class and
+confusion CSVs, processed image steps, scaled feature vectors, and per-sample
+summaries for selected images.
+
+The debug report is now failure-analysis oriented. It ranks high-confidence
+wrong and ambiguous wrong samples, buckets errors by simple image statistics,
+compares resize-mode predictions, and can show nearest training examples in
+the same scaled feature space.
+
 For repeatable sweeps, use `image-matrix` to compare models, feature modes,
 image sizes, resize modes, intervals, and seeds while writing CSV or JSON
 reports under the ignored `reports/` directory.

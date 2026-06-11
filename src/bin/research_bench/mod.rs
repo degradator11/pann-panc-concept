@@ -2,14 +2,19 @@ mod args;
 mod artifact_commands;
 mod artifacts;
 mod datasets;
+mod debug_report;
 mod learning_curve;
 mod matrix;
 mod metrics;
 mod run;
 
 pub use args::{
-    Args, MatrixModel, OutputFormat, image_config, parse_args, required_data_path,
+    Args, DebugSamples, MatrixModel, OutputFormat, image_config, parse_args, required_data_path,
     required_image_path, required_model_path, required_out_path,
+};
+pub use debug_report::{
+    DebugReference, ImageEvalDebugData, ImageEvalPrediction, ResizePrediction,
+    SampleResizeComparison, selected_prediction_indices, write_image_eval_debug_report,
 };
 pub use metrics::{
     ArtifactMetrics, BenchMetrics, ClassScore, CommandOutput, ConfusionRow, EvalMetrics,

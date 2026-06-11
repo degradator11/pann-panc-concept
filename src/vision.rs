@@ -149,6 +149,12 @@ pub enum VisionError {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct ImageProcessingStep {
+    pub name: String,
+    pub image: image::DynamicImage,
+}
+
 pub fn load_image_as_vector(
     path: impl AsRef<Path>,
     config: ImageVectorConfig,
@@ -160,6 +166,25 @@ pub fn load_image_as_vector(
         source,
     })?;
     Ok(features::image_to_vector(image, config))
+}
+
+pub fn load_image_processing_steps(
+    path: impl AsRef<Path>,
+    config: ImageVectorConfig,
+) -> Result<Vec<ImageProcessingStep>, VisionError> {
+    validate_config(config)?;
+    let path = path.as_ref();
+    let image = image::open(path).map_err(|source| VisionError::DecodeImage {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(features::image_processing_steps(image, config)
+        .into_iter()
+        .map(|step| ImageProcessingStep {
+            name: step.name.to_string(),
+            image: step.image,
+        })
+        .collect())
 }
 
 pub fn load_image_folder(
@@ -458,6 +483,37 @@ mod tests {
         assert!(letterbox[5] > 0.99);
         assert!(letterbox[10] > 0.99);
         assert!(letterbox[15] > 0.49 && letterbox[15] < 0.51);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn processing_steps_include_original_and_resize_steps() {
+        let root = std::env::temp_dir().join(format!(
+            "progress_ai_steps_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let image_path = root.join("wide.png");
+        let image = RgbImage::from_pixel(4, 2, Rgb([255, 255, 255]));
+        image.save(&image_path).unwrap();
+
+        let steps = load_image_processing_steps(
+            &image_path,
+            ImageVectorConfig::new(4, 4).with_resize_mode(ImageResizeMode::CenterCrop),
+        )
+        .unwrap();
+        let names = steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["original", "center_crop", "resize_exact"]);
+        assert_eq!(steps.last().unwrap().image.width(), 4);
+        assert_eq!(steps.last().unwrap().image.height(), 4);
         fs::remove_dir_all(root).unwrap();
     }
 

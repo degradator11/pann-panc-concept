@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use progress_ai::panc::{PancComparator, SimilarityMetric};
@@ -10,16 +10,20 @@ use progress_ai::pann::{
 use progress_ai::preprocess::{
     Dataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split,
 };
-use progress_ai::vision::{load_image_as_vector, load_image_folder, load_image_folder_with_paths};
+use progress_ai::vision::{
+    ImageResizeMode, load_image_as_vector, load_image_folder, load_image_folder_with_paths,
+};
 
 use super::artifacts::{
     ARTIFACT_VERSION, ImageArtifact, ModelArtifact, PancImageArtifact, PancReferenceArtifact,
     PannImageArtifact, PreprocessingArtifact, load_artifact, save_artifact,
 };
 use super::{
-    Args, ArtifactMetrics, ClassScore, CommandOutput, ConfusionRow, EvalMetrics,
-    MisclassifiedExample, PerClassAccuracy, PredictionNeighbor, PredictionOutput, image_config,
+    Args, ArtifactMetrics, ClassScore, CommandOutput, ConfusionRow, DebugReference, EvalMetrics,
+    ImageEvalDebugData, ImageEvalPrediction, MisclassifiedExample, PerClassAccuracy,
+    PredictionNeighbor, PredictionOutput, ResizePrediction, SampleResizeComparison, image_config,
     required_data_path, required_image_path, required_model_path, required_out_path,
+    selected_prediction_indices, write_image_eval_debug_report,
 };
 
 const MAX_MISCLASSIFIED_EXAMPLES: usize = 25;
@@ -33,6 +37,7 @@ struct ScaledEvalDataset {
 struct PredictedClass {
     index: usize,
     score_margin: f64,
+    scores: Vec<ClassScore>,
 }
 
 struct ClassificationDiagnostics {
@@ -166,16 +171,46 @@ pub fn eval_pann(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
             Ok(PredictedClass {
                 index: argmax(&outputs),
                 score_margin: score_margin(&outputs),
+                scores: class_scores(&outputs, &artifact.class_names),
             })
         })
         .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     let inference_ms = inference_start.elapsed().as_millis();
-    let diagnostics = classification_diagnostics(
+    let prediction_records = image_eval_predictions(
         &eval_dataset.labels,
         &predictions,
         &eval_dataset.paths,
         &artifact.class_names,
     );
+    let diagnostics = classification_diagnostics(&prediction_records, &artifact.class_names);
+    if let Some(debug_out_path) = args.debug_out_path.as_deref() {
+        let selected =
+            selected_prediction_indices(&prediction_records, args.debug_samples, args.debug_limit);
+        let resize_comparisons =
+            pann_resize_comparisons(&selected, &eval_dataset, &artifact, &model)?;
+        let debug_references = load_debug_references(args, data_path, &artifact)?;
+        write_image_eval_debug_report(&ImageEvalDebugData {
+            out_path: debug_out_path,
+            model: "pann",
+            data_path,
+            model_path,
+            image_config: artifact.image.to_config()?,
+            image_features: &artifact.image.feature_mode,
+            image_resize: &artifact.image.resize_mode,
+            accuracy: diagnostics.accuracy,
+            inference_ms,
+            memory_bytes: model.memory_bytes_estimate(),
+            per_class_accuracy: &diagnostics.per_class_accuracy,
+            confusion_matrix: &diagnostics.confusion_matrix,
+            predictions: &prediction_records,
+            scaled_samples: &eval_dataset.samples,
+            resize_comparisons: &resize_comparisons,
+            references: &debug_references,
+            debug_limit: args.debug_limit,
+            debug_samples: args.debug_samples,
+            debug_neighbors: args.debug_neighbors,
+        })?;
+    }
 
     Ok(CommandOutput::Eval(EvalMetrics {
         model: "pann".to_string(),
@@ -209,17 +244,46 @@ pub fn eval_panc(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         .samples
         .iter()
         .map(|sample| {
-            panc_predict_with_margin(&comparator, sample, args.top_k, artifact.class_names.len())
+            panc_predict_with_margin(&comparator, sample, args.top_k, &artifact.class_names)
         })
         .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     let inference_ms = inference_start.elapsed().as_millis();
     let memory_bytes = panc_memory_bytes(&artifact.references);
-    let diagnostics = classification_diagnostics(
+    let prediction_records = image_eval_predictions(
         &eval_dataset.labels,
         &predictions,
         &eval_dataset.paths,
         &artifact.class_names,
     );
+    let diagnostics = classification_diagnostics(&prediction_records, &artifact.class_names);
+    if let Some(debug_out_path) = args.debug_out_path.as_deref() {
+        let selected =
+            selected_prediction_indices(&prediction_records, args.debug_samples, args.debug_limit);
+        let resize_comparisons =
+            panc_resize_comparisons(&selected, &eval_dataset, &artifact, &comparator, args.top_k)?;
+        let debug_references = load_debug_references(args, data_path, &artifact)?;
+        write_image_eval_debug_report(&ImageEvalDebugData {
+            out_path: debug_out_path,
+            model: "panc_like",
+            data_path,
+            model_path,
+            image_config: artifact.image.to_config()?,
+            image_features: &artifact.image.feature_mode,
+            image_resize: &artifact.image.resize_mode,
+            accuracy: diagnostics.accuracy,
+            inference_ms,
+            memory_bytes,
+            per_class_accuracy: &diagnostics.per_class_accuracy,
+            confusion_matrix: &diagnostics.confusion_matrix,
+            predictions: &prediction_records,
+            scaled_samples: &eval_dataset.samples,
+            resize_comparisons: &resize_comparisons,
+            references: &debug_references,
+            debug_limit: args.debug_limit,
+            debug_samples: args.debug_samples,
+            debug_neighbors: args.debug_neighbors,
+        })?;
+    }
 
     Ok(CommandOutput::Eval(EvalMetrics {
         model: "panc_like".to_string(),
@@ -311,6 +375,55 @@ fn load_scaled_eval_dataset(
     })
 }
 
+fn load_debug_references(
+    args: &Args,
+    eval_data_path: &str,
+    artifact: &impl ImageClassifierArtifact,
+) -> Result<Vec<DebugReference>, Box<dyn Error>> {
+    let Some(train_path) = debug_train_data_path(args, eval_data_path) else {
+        return Ok(Vec::new());
+    };
+    let dataset = match load_image_folder_with_paths(&train_path, artifact.image().to_config()?) {
+        Ok(dataset) => dataset,
+        Err(error) if args.debug_train_data_path.is_none() => {
+            eprintln!("warning: skipped inferred debug train data {train_path}: {error}");
+            return Ok(Vec::new());
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let labels = remap_labels_by_class_name(&dataset.dataset, artifact.class_names())?;
+    let samples = min_max_scale(
+        &dataset.dataset.samples,
+        &artifact.preprocessing().min_max_ranges,
+    );
+
+    Ok(samples
+        .into_iter()
+        .zip(labels)
+        .zip(dataset.image_paths)
+        .map(|((scaled_sample, label_index), path)| DebugReference {
+            path: path.display().to_string(),
+            label_index,
+            label: label_name(artifact.class_names(), label_index),
+            scaled_sample,
+        })
+        .collect())
+}
+
+fn debug_train_data_path(args: &Args, eval_data_path: &str) -> Option<String> {
+    if let Some(path) = &args.debug_train_data_path {
+        return Some(path.clone());
+    }
+
+    let eval_path = Path::new(eval_data_path);
+    let folder_name = eval_path.file_name()?.to_string_lossy();
+    if folder_name.eq_ignore_ascii_case("eval") {
+        eval_path.parent().map(|path| path.display().to_string())
+    } else {
+        None
+    }
+}
+
 fn load_scaled_image(
     image_path: &str,
     image: &ImageArtifact,
@@ -319,6 +432,128 @@ fn load_scaled_image(
     let sample = load_image_as_vector(image_path, image.to_config()?)?;
     let mut scaled = min_max_scale(&[sample], &preprocessing.min_max_ranges);
     Ok(scaled.remove(0))
+}
+
+fn pann_resize_comparisons(
+    selected_prediction_indices: &[usize],
+    eval_dataset: &ScaledEvalDataset,
+    artifact: &PannImageArtifact,
+    model: &PannModel,
+) -> Result<Vec<SampleResizeComparison>, Box<dyn Error>> {
+    selected_prediction_indices
+        .iter()
+        .copied()
+        .map(|index| {
+            let path = eval_dataset
+                .paths
+                .get(index)
+                .ok_or_else(|| format!("missing eval path for sample {index}"))?;
+            let mut predictions = Vec::new();
+            for resize_mode in all_resize_modes() {
+                let sample = load_scaled_image_with_resize(
+                    path,
+                    &artifact.image,
+                    &artifact.preprocessing,
+                    resize_mode,
+                )?;
+                let outputs = model.forward(&sample)?;
+                let predicted_index = argmax(&outputs);
+                predictions.push(ResizePrediction {
+                    resize_mode: resize_mode.as_str().to_string(),
+                    predicted_index,
+                    predicted_label: label_name(&artifact.class_names, predicted_index),
+                    score_margin: score_margin(&outputs),
+                    differs_from_artifact_prediction: false,
+                    scores: class_scores(&outputs, &artifact.class_names),
+                });
+            }
+            mark_resize_differences(&mut predictions, artifact.image.to_config()?.resize_mode);
+            Ok(SampleResizeComparison {
+                sample_index: index,
+                predictions,
+            })
+        })
+        .collect()
+}
+
+fn panc_resize_comparisons(
+    selected_prediction_indices: &[usize],
+    eval_dataset: &ScaledEvalDataset,
+    artifact: &PancImageArtifact,
+    comparator: &PancComparator<usize>,
+    top_k: usize,
+) -> Result<Vec<SampleResizeComparison>, Box<dyn Error>> {
+    selected_prediction_indices
+        .iter()
+        .copied()
+        .map(|index| {
+            let path = eval_dataset
+                .paths
+                .get(index)
+                .ok_or_else(|| format!("missing eval path for sample {index}"))?;
+            let mut predictions = Vec::new();
+            for resize_mode in all_resize_modes() {
+                let sample = load_scaled_image_with_resize(
+                    path,
+                    &artifact.image,
+                    &artifact.preprocessing,
+                    resize_mode,
+                )?;
+                let predicted =
+                    panc_predict_with_margin(comparator, &sample, top_k, &artifact.class_names)?;
+                predictions.push(ResizePrediction {
+                    resize_mode: resize_mode.as_str().to_string(),
+                    predicted_index: predicted.index,
+                    predicted_label: label_name(&artifact.class_names, predicted.index),
+                    score_margin: predicted.score_margin,
+                    differs_from_artifact_prediction: false,
+                    scores: predicted.scores,
+                });
+            }
+            mark_resize_differences(&mut predictions, artifact.image.to_config()?.resize_mode);
+            Ok(SampleResizeComparison {
+                sample_index: index,
+                predictions,
+            })
+        })
+        .collect()
+}
+
+fn load_scaled_image_with_resize(
+    image_path: &Path,
+    image: &ImageArtifact,
+    preprocessing: &PreprocessingArtifact,
+    resize_mode: ImageResizeMode,
+) -> Result<Vec<f64>, Box<dyn Error>> {
+    let config = image.to_config()?.with_resize_mode(resize_mode);
+    let sample = load_image_as_vector(image_path, config)?;
+    let mut scaled = min_max_scale(&[sample], &preprocessing.min_max_ranges);
+    Ok(scaled.remove(0))
+}
+
+fn mark_resize_differences(predictions: &mut [ResizePrediction], artifact_mode: ImageResizeMode) {
+    let artifact_prediction = predictions
+        .iter()
+        .find(|prediction| prediction.resize_mode == artifact_mode.as_str())
+        .map(|prediction| prediction.predicted_index)
+        .unwrap_or_else(|| {
+            predictions
+                .first()
+                .map(|prediction| prediction.predicted_index)
+                .unwrap_or(0)
+        });
+    for prediction in predictions {
+        prediction.differs_from_artifact_prediction =
+            prediction.predicted_index != artifact_prediction;
+    }
+}
+
+fn all_resize_modes() -> [ImageResizeMode; 3] {
+    [
+        ImageResizeMode::Stretch,
+        ImageResizeMode::CenterCrop,
+        ImageResizeMode::Letterbox,
+    ]
 }
 
 fn build_panc_comparator_from_samples(
@@ -394,10 +629,10 @@ fn panc_predict_with_margin(
     comparator: &PancComparator<usize>,
     sample: &[f64],
     k: usize,
-    class_count: usize,
+    class_names: &[String],
 ) -> Result<PredictedClass, Box<dyn Error>> {
     let neighbors = comparator.top_k(sample, k.max(1))?;
-    let mut scores = vec![0.0; class_count];
+    let mut scores = vec![0.0; class_names.len()];
     for neighbor in neighbors {
         if let Some(score) = scores.get_mut(neighbor.label) {
             *score += neighbor.score;
@@ -406,13 +641,39 @@ fn panc_predict_with_margin(
     Ok(PredictedClass {
         index: argmax(&scores),
         score_margin: score_margin(&scores),
+        scores: class_scores(&scores, class_names),
     })
 }
 
-fn classification_diagnostics(
+fn image_eval_predictions(
     labels: &[usize],
     predictions: &[PredictedClass],
     paths: &[PathBuf],
+    class_names: &[String],
+) -> Vec<ImageEvalPrediction> {
+    labels
+        .iter()
+        .zip(predictions)
+        .enumerate()
+        .map(|(sample_index, (actual, prediction))| ImageEvalPrediction {
+            sample_index,
+            path: paths
+                .get(sample_index)
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| format!("sample-{sample_index}")),
+            expected_index: *actual,
+            expected_label: label_name(class_names, *actual),
+            predicted_index: prediction.index,
+            predicted_label: label_name(class_names, prediction.index),
+            correct: *actual == prediction.index,
+            score_margin: prediction.score_margin,
+            scores: prediction.scores.clone(),
+        })
+        .collect()
+}
+
+fn classification_diagnostics(
+    predictions: &[ImageEvalPrediction],
     class_names: &[String],
 ) -> ClassificationDiagnostics {
     let class_count = class_names.len();
@@ -422,31 +683,28 @@ fn classification_diagnostics(
     let mut correct = 0usize;
     let mut misclassified_examples = Vec::new();
 
-    for (index, (actual, prediction)) in labels.iter().zip(predictions).enumerate() {
-        if let Some(total) = totals.get_mut(*actual) {
+    for prediction in predictions {
+        if let Some(total) = totals.get_mut(prediction.expected_index) {
             *total += 1;
         }
-        if let Some(row) = confusion.get_mut(*actual)
-            && let Some(cell) = row.get_mut(prediction.index)
+        if let Some(row) = confusion.get_mut(prediction.expected_index)
+            && let Some(cell) = row.get_mut(prediction.predicted_index)
         {
             *cell += 1;
         }
 
-        if *actual == prediction.index {
+        if prediction.correct {
             correct += 1;
-            if let Some(class_correct) = correct_by_class.get_mut(*actual) {
+            if let Some(class_correct) = correct_by_class.get_mut(prediction.expected_index) {
                 *class_correct += 1;
             }
         } else if misclassified_examples.len() < MAX_MISCLASSIFIED_EXAMPLES {
             misclassified_examples.push(MisclassifiedExample {
-                path: paths
-                    .get(index)
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_else(|| format!("sample-{index}")),
-                expected_index: *actual,
-                expected_label: label_name(class_names, *actual),
-                predicted_index: prediction.index,
-                predicted_label: label_name(class_names, prediction.index),
+                path: prediction.path.clone(),
+                expected_index: prediction.expected_index,
+                expected_label: prediction.expected_label.clone(),
+                predicted_index: prediction.predicted_index,
+                predicted_label: prediction.predicted_label.clone(),
                 score_margin: prediction.score_margin,
             });
         }
@@ -483,10 +741,10 @@ fn classification_diagnostics(
         .collect::<Vec<_>>();
 
     ClassificationDiagnostics {
-        accuracy: if labels.is_empty() {
+        accuracy: if predictions.is_empty() {
             0.0
         } else {
-            correct as f64 / labels.len() as f64
+            correct as f64 / predictions.len() as f64
         },
         per_class_accuracy,
         confusion_matrix,

@@ -18,6 +18,11 @@ pub(super) const LBP_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * LBP_BINS;
 pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN + HOG_LEN;
 pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
 
+pub(super) struct ImageProcessingStep {
+    pub name: &'static str,
+    pub image: DynamicImage,
+}
+
 pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) -> Vec<f64> {
     let resized = prepare_image(image, config);
     match config.feature_mode {
@@ -78,17 +83,66 @@ fn prepare_image(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage
     }
 }
 
+pub(super) fn image_processing_steps(
+    image: DynamicImage,
+    config: ImageVectorConfig,
+) -> Vec<ImageProcessingStep> {
+    let mut steps = vec![ImageProcessingStep {
+        name: "original",
+        image: image.clone(),
+    }];
+
+    match config.resize_mode {
+        ImageResizeMode::Stretch => {
+            steps.push(ImageProcessingStep {
+                name: "resize_exact",
+                image: image.resize_exact(config.width, config.height, FilterType::Triangle),
+            });
+        }
+        ImageResizeMode::CenterCrop => {
+            let cropped = center_crop_only(&image);
+            steps.push(ImageProcessingStep {
+                name: "center_crop",
+                image: cropped.clone(),
+            });
+            steps.push(ImageProcessingStep {
+                name: "resize_exact",
+                image: cropped.resize_exact(config.width, config.height, FilterType::Triangle),
+            });
+        }
+        ImageResizeMode::Letterbox => {
+            let contained = image.resize(config.width, config.height, FilterType::Triangle);
+            steps.push(ImageProcessingStep {
+                name: "resize_contain",
+                image: contained.clone(),
+            });
+            steps.push(ImageProcessingStep {
+                name: "letterbox",
+                image: letterbox_from_resized(contained, config),
+            });
+        }
+    }
+
+    steps
+}
+
 fn center_crop(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
-    let crop_size = image.width().min(image.height()).max(1);
-    let left = (image.width().saturating_sub(crop_size)) / 2;
-    let top = (image.height().saturating_sub(crop_size)) / 2;
-    image
-        .crop_imm(left, top, crop_size, crop_size)
-        .resize_exact(config.width, config.height, FilterType::Triangle)
+    center_crop_only(&image).resize_exact(config.width, config.height, FilterType::Triangle)
 }
 
 fn letterbox(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
     let resized = image.resize(config.width, config.height, FilterType::Triangle);
+    letterbox_from_resized(resized, config)
+}
+
+fn center_crop_only(image: &DynamicImage) -> DynamicImage {
+    let crop_size = image.width().min(image.height()).max(1);
+    let left = (image.width().saturating_sub(crop_size)) / 2;
+    let top = (image.height().saturating_sub(crop_size)) / 2;
+    image.crop_imm(left, top, crop_size, crop_size)
+}
+
+fn letterbox_from_resized(resized: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
     let mut canvas = RgbImage::from_pixel(config.width, config.height, Rgb([127, 127, 127]));
     let x = (config.width.saturating_sub(resized.width()) / 2) as i64;
     let y = (config.height.saturating_sub(resized.height()) / 2) as i64;

@@ -62,7 +62,7 @@ pub struct EvalMetrics {
     pub misclassified_examples: Vec<MisclassifiedExample>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PerClassAccuracy {
     pub class_index: usize,
     pub class_name: String,
@@ -71,14 +71,14 @@ pub struct PerClassAccuracy {
     pub accuracy: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ConfusionRow {
     pub actual_index: usize,
     pub actual_name: String,
     pub predicted_counts: Vec<usize>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MisclassifiedExample {
     pub path: String,
     pub expected_index: usize,
@@ -88,7 +88,7 @@ pub struct MisclassifiedExample {
     pub score_margin: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ClassScore {
     pub class_index: usize,
     pub class_name: String,
