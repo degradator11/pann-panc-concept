@@ -101,7 +101,7 @@ pub fn load_image_folder(
 
     for (label, class_dir) in class_dirs.into_iter().enumerate() {
         let class_name = class_dir.file_name().to_string_lossy().to_string();
-        class_names.push(class_name);
+        class_names.push(class_name.clone());
 
         let mut image_files = fs::read_dir(class_dir.path())
             .map_err(|source| VisionError::ReadDir {
@@ -118,9 +118,20 @@ pub fn load_image_folder(
             .collect::<Vec<_>>();
         image_files.sort_by_key(|entry| entry.file_name());
 
+        let mut skipped_images = 0usize;
         for image_file in image_files {
-            samples.push(load_image_as_vector(image_file.path(), config)?);
-            labels.push(label);
+            match load_image_as_vector(image_file.path(), config) {
+                Ok(sample) => {
+                    samples.push(sample);
+                    labels.push(label);
+                }
+                Err(VisionError::DecodeImage { .. }) => skipped_images += 1,
+                Err(error) => return Err(error),
+            }
+        }
+
+        if skipped_images > 0 {
+            eprintln!("warning: skipped {skipped_images} unreadable images in class {class_name}");
         }
     }
 

@@ -28,10 +28,31 @@ software optimizations, GPU implementation choices, and current training code.
 - `panc-public-implementation-notes.md`: what can be inferred about PANC and
   what remains underspecified.
 - `reproduction-plan.md`: practical implementation roadmap and validation plan.
+- `missing-parts-analysis.md`: public-information gap analysis and difficulty
+  estimates.
+
+## Runnable prototype
+
+The root project now contains a Rust prototype with CSV/vector benchmarks and
+image-folder benchmarks. See `../README.md` for build commands, training and
+evaluation commands, and real dataset links including Microsoft/Kaggle Cats and
+Dogs, Oxford-IIIT Pets, Fruits-360, CIFAR-10, and Open Images.
+
+Image-folder benchmarks expect one class directory per label:
+
+```text
+dataset-root/
+  cat/
+    cat-001.jpg
+  dog/
+    dog-001.jpg
+```
+
+The benchmark performs a deterministic 80/20 train/evaluation split and reports
+both `train_accuracy` and `test_accuracy`.
 
 ## Legal boundary
 
 These notes are for technical analysis. They are not legal advice. Several
 Progress patents appear active. Building or using an implementation for
 commercial purposes can require a freedom-to-operate review and/or a license.
-

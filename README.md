@@ -164,6 +164,104 @@ cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images 
 Supported image formats are PNG and JPEG. Images are resized to the configured
 size and converted to grayscale.
 
+## Real Image Datasets
+
+The image-folder benchmark works with any classification dataset arranged as
+one directory per class. The benchmark uses a deterministic 80/20 split: it
+trains on 80% of the images and reports accuracy on both the training portion
+and the held-out 20% evaluation portion.
+
+Good starter datasets:
+
+| Dataset | Use case | Link | Notes |
+| --- | --- | --- | --- |
+| Microsoft/Kaggle Cats and Dogs | cat vs dog classification | https://www.microsoft.com/en-us/download/details.aspx?id=54765 | About 786 MB; usually extracts to `PetImages\Cat` and `PetImages\Dog`. |
+| Oxford-IIIT Pet Dataset | pet species or breed classification | https://www.robots.ox.ac.uk/~vgg/data/pets/ | 37 pet categories, roughly 200 images each, with annotations. |
+| Fruits-360 | apple/fruit classification | https://www.kaggle.com/datasets/moltean/fruits | Clean centered fruit images; a good fit for raw-pixel experiments. |
+| CIFAR-10 | small multi-class benchmark including cat and dog | https://www.cs.toronto.edu/~kriz/cifar.html | Needs a converter because the official files are batch/binary formats, not class folders. |
+| Open Images V7 | large-scale real-world image labels/detection | https://storage.googleapis.com/openimages/web/index.html | Too large for a first run; detection labels need additional pipeline work. |
+
+### Cats vs Dogs
+
+After downloading and extracting the Microsoft/Kaggle archive, point `--data`
+at the directory that contains the `Cat` and `Dog` subdirectories:
+
+```text
+C:\datasets\PetImages\
+  Cat\
+  Dog\
+```
+
+Train and evaluate PANN:
+
+```powershell
+cargo run --bin research-bench -- pann-image-folder --data C:\datasets\PetImages --image-size 32 --epochs 12 --intervals 8 --format json
+```
+
+Evaluate the PANC-like comparator:
+
+```powershell
+cargo run --bin research-bench -- panc-image-folder --data C:\datasets\PetImages --image-size 32 --format json
+```
+
+### Apples Or Fruits
+
+After downloading Fruits-360, use a directory with one folder per fruit class,
+for example the `Training` folder:
+
+```text
+C:\datasets\fruits-360\Training\
+  Apple Braeburn\
+  Apple Golden 1\
+  Banana\
+  Orange\
+```
+
+Train and evaluate PANN:
+
+```powershell
+cargo run --bin research-bench -- pann-image-folder --data "C:\datasets\fruits-360\Training" --image-size 32 --epochs 12 --intervals 8 --format json
+```
+
+Evaluate the PANC-like comparator:
+
+```powershell
+cargo run --bin research-bench -- panc-image-folder --data "C:\datasets\fruits-360\Training" --image-size 32 --format json
+```
+
+To train a smaller apple-vs-other experiment, create a compact folder such as:
+
+```text
+C:\datasets\apple-binary\
+  apple\
+    apple-001.jpg
+  other\
+    banana-001.jpg
+    orange-001.jpg
+```
+
+Then run:
+
+```powershell
+cargo run --bin research-bench -- pann-image-folder --data C:\datasets\apple-binary --image-size 32 --epochs 12 --intervals 8
+```
+
+### Reading The Metrics
+
+JSON and CSV output contain:
+
+```text
+train_accuracy    accuracy on the training split
+test_accuracy     accuracy on the held-out evaluation split
+train_ms          training/indexing time
+inference_ms      evaluation time
+memory_bytes      approximate model/reference memory
+```
+
+For PANN, `epochs` and `interval_count` affect training directly. For PANC-like
+comparison, there is no iterative training; references are stored and evaluated
+with top-k similarity voting.
+
 ## Library Usage
 
 Minimal PANN example:
