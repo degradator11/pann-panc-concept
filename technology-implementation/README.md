@@ -56,9 +56,10 @@ from one folder and evaluate against another folder with matching class names:
 cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
 ```
 
-Image benchmarks support `--image-features pixels`, `color`, `hog`, and
-`combined`. The `combined` mode is the current recommended classical baseline
-because it adds color histograms, coarse intensity layout, and HOG-like edge
+Image benchmarks support `--image-features pixels`, `color`, `hog`,
+`combined`, and `rich`. The `combined` mode is the compact classical baseline.
+The `rich` mode is the current strongest Cats/Dogs classical baseline because
+it adds HSV histograms, color moments, and local binary pattern texture
 features before PANN/PANC processing.
 
 The benchmark CLI also supports persistent image artifacts with
@@ -69,6 +70,11 @@ README's artifact section for the full command examples.
 For repeatable sweeps, use `image-matrix` to compare models, feature modes,
 image sizes, intervals, and seeds while writing CSV or JSON reports under the
 ignored `reports/` directory.
+
+The public Progress tests page reports target MSE, epoch/error, and training
+time. The prototype mirrors that reporting style with `pann-learning-curve`,
+which emits per-epoch MSE before/after training, train accuracy, test accuracy,
+and elapsed milliseconds.
 
 ## Legal boundary
 

@@ -160,8 +160,8 @@ my-images\
 Run PANN or PANC-like recognition over that folder:
 
 ```powershell
-cargo run --bin research-bench -- pann-image-folder --data C:\path\to\my-images --image-size 32 --epochs 20 --intervals 8 --image-features combined
-cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images --image-size 32 --image-features combined
+cargo run --bin research-bench -- pann-image-folder --data C:\path\to\my-images --image-size 64 --epochs 20 --intervals 8 --image-features rich
+cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images --image-size 64 --image-features rich
 ```
 
 Supported image formats are PNG and JPEG. Images are resized to the configured
@@ -169,6 +169,9 @@ size, then vectorized. `--image-features pixels` uses raw grayscale pixels.
 `--image-features combined` uses a smaller handcrafted vector with color
 histograms, spatial intensity statistics, and HOG-like edge buckets. The
 additional `color` and `hog` modes are available for ablation runs.
+`--image-features rich` adds HSV histograms, RGB/HSV color moments, and local
+binary pattern texture features. It is currently the strongest classical
+feature mode for Cats/Dogs, at the cost of more memory and slower comparison.
 
 ## Real Image Datasets
 
@@ -193,8 +196,8 @@ C:\datasets\PetImagesShort\
 Use:
 
 ```powershell
-cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
-cargo run --release --bin research-bench -- panc-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 32 --image-features combined --format json
+cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 64 --epochs 12 --intervals 8 --image-features rich --format json
+cargo run --release --bin research-bench -- panc-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 64 --image-features rich --format json
 ```
 
 Nested directories that do not contain images directly, such as `Eval`, are not
@@ -224,13 +227,13 @@ C:\datasets\PetImages\
 Train and evaluate PANN:
 
 ```powershell
-cargo run --bin research-bench -- pann-image-folder --data C:\datasets\PetImages --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
+cargo run --bin research-bench -- pann-image-folder --data C:\datasets\PetImages --image-size 64 --epochs 12 --intervals 8 --image-features rich --format json
 ```
 
 Evaluate the PANC-like comparator:
 
 ```powershell
-cargo run --bin research-bench -- panc-image-folder --data C:\datasets\PetImages --image-size 32 --image-features combined --format json
+cargo run --bin research-bench -- panc-image-folder --data C:\datasets\PetImages --image-size 64 --image-features rich --format json
 ```
 
 ### Apples Or Fruits
@@ -301,13 +304,13 @@ feature modes, image sizes, interval counts, and random seeds.
 Small Cats/Dogs matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined --matrix-image-sizes 32 --matrix-intervals 8 --matrix-seeds 42 --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --epochs 12
 ```
 
 Larger matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined --matrix-image-sizes 16,32 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --epochs 12
 ```
 
 Notes:
@@ -320,6 +323,34 @@ Notes:
   accuracy.
 - Generated `reports/` files are ignored by git.
 
+### Learning Curve Reports
+
+The public [Progress tests page](https://progress.ai/tests/) reports training
+progress as target MSE, epoch, error, and elapsed training time. This prototype
+can emit the same kind of PANN-oriented learning curve with
+`pann-learning-curve`.
+
+```powershell
+cargo run --release --bin research-bench -- pann-learning-curve --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-learning-curve.csv --format csv --image-size 64 --epochs 12 --intervals 8 --image-features rich --target-mse 0.02 --seed 2
+```
+
+The report contains one row per epoch:
+
+```text
+epoch
+mean_mse_before
+mean_mse_after
+train_accuracy
+test_accuracy
+elapsed_ms
+```
+
+On the short Cats/Dogs dataset, PANN with `rich` features reached target
+training MSE `0.02` at epoch 8, but held-out evaluation accuracy remained about
+65%. That distinction matters: falling training error proves the model is
+fitting the training vectors; it does not by itself prove strong image
+recognition.
+
 ### Persistent Training Artifacts
 
 The in-memory benchmark commands train and evaluate in one run. To train once
@@ -328,7 +359,7 @@ and reuse the result later, use the artifact commands.
 Train PANN and write a model JSON file:
 
 ```powershell
-cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
+cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json --image-size 64 --epochs 12 --intervals 8 --image-features rich --format json
 ```
 
 Evaluate the saved PANN artifact:
@@ -346,7 +377,7 @@ cargo run --release --bin research-bench -- predict-pann --model models\cats-dog
 PANC-like artifacts use the same pattern:
 
 ```powershell
-cargo run --release --bin research-bench -- train-panc-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-panc.json --image-size 32 --image-features combined --format json
+cargo run --release --bin research-bench -- train-panc-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-panc.json --image-size 64 --image-features rich --format json
 cargo run --release --bin research-bench -- eval-panc --model models\cats-dogs-panc.json --data C:\datasets\cats-dogs\eval --format json
 cargo run --release --bin research-bench -- predict-panc --model models\cats-dogs-panc.json --image C:\datasets\cats-dogs\eval\Dog\dog-001.jpg --format json
 ```

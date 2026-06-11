@@ -2,6 +2,7 @@ mod args;
 mod artifact_commands;
 mod artifacts;
 mod datasets;
+mod learning_curve;
 mod matrix;
 mod metrics;
 mod run;
@@ -11,7 +12,8 @@ pub use args::{
     required_image_path, required_model_path, required_out_path,
 };
 pub use metrics::{
-    ArtifactMetrics, BenchMetrics, ClassScore, CommandOutput, EvalMetrics, MatrixReport, MatrixRow,
-    MatrixSummary, PredictionNeighbor, PredictionOutput, write_output,
+    ArtifactMetrics, BenchMetrics, ClassScore, CommandOutput, EvalMetrics, LearningCurveReport,
+    LearningCurveRow, MatrixReport, MatrixRow, MatrixSummary, PredictionNeighbor, PredictionOutput,
+    write_output,
 };
 pub use run::run;

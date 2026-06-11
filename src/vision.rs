@@ -45,6 +45,7 @@ impl ImageVectorConfig {
             ImageFeatureMode::ColorHistogram => features::COLOR_HISTOGRAM_LEN,
             ImageFeatureMode::Hog => features::HOG_LEN,
             ImageFeatureMode::Combined => features::COMBINED_LEN,
+            ImageFeatureMode::Rich => features::RICH_LEN,
         }
     }
 }
@@ -55,6 +56,7 @@ pub enum ImageFeatureMode {
     ColorHistogram,
     Hog,
     Combined,
+    Rich,
 }
 
 impl ImageFeatureMode {
@@ -64,6 +66,7 @@ impl ImageFeatureMode {
             Self::ColorHistogram => "color",
             Self::Hog => "hog",
             Self::Combined => "combined",
+            Self::Rich => "rich",
         }
     }
 }
@@ -77,8 +80,9 @@ impl FromStr for ImageFeatureMode {
             "color" | "histogram" | "color-histogram" => Ok(Self::ColorHistogram),
             "hog" | "edges" => Ok(Self::Hog),
             "combined" => Ok(Self::Combined),
+            "rich" | "enhanced" => Ok(Self::Rich),
             other => Err(format!(
-                "invalid image feature mode {other:?}; expected pixels, color, hog, or combined"
+                "invalid image feature mode {other:?}; expected pixels, color, hog, combined, or rich"
             )),
         }
     }
@@ -342,6 +346,15 @@ mod tests {
 
         assert_eq!(dataset.samples[0].len(), config.vector_len());
         assert_eq!(config.vector_len(), 184);
+    }
+
+    #[test]
+    fn rich_feature_mode_has_expected_length() {
+        let config = ImageVectorConfig::new(8, 8).with_feature_mode(ImageFeatureMode::Rich);
+        let dataset = synthetic_image_dataset(config, 1, 9).unwrap();
+
+        assert_eq!(dataset.samples[0].len(), config.vector_len());
+        assert_eq!(config.vector_len(), 476);
     }
 
     #[test]

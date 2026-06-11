@@ -20,6 +20,7 @@ pub struct Args {
     pub image_features: ImageFeatureMode,
     pub samples_per_class: usize,
     pub top_k: usize,
+    pub target_mse: Option<f64>,
     pub matrix_models: Vec<MatrixModel>,
     pub matrix_features: Vec<ImageFeatureMode>,
     pub matrix_image_sizes: Vec<u32>,
@@ -42,7 +43,7 @@ pub enum MatrixModel {
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--image-features pixels|color|hog|combined] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined,rich] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3]",
     )?;
 
     let mut args = Args {
@@ -61,6 +62,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         image_features: ImageFeatureMode::Pixels,
         samples_per_class: 80,
         top_k: 3,
+        target_mse: None,
         matrix_models: Vec::new(),
         matrix_features: Vec::new(),
         matrix_image_sizes: Vec::new(),
@@ -139,6 +141,13 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .next()
                     .ok_or("--top-k requires a value")?
                     .parse::<usize>()?;
+            }
+            "--target-mse" => {
+                args.target_mse = Some(
+                    raw.next()
+                        .ok_or("--target-mse requires a value")?
+                        .parse::<f64>()?,
+                );
             }
             "--matrix-models" => {
                 args.matrix_models =

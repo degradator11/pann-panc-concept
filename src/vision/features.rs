@@ -4,13 +4,19 @@ use image::{DynamicImage, GrayImage, RgbImage};
 use super::{ImageFeatureMode, ImageVectorConfig};
 
 const COLOR_BINS: usize = 8;
+const HSV_BINS: usize = 8;
 const SPATIAL_GRID: usize = 4;
 const HOG_BINS: usize = 8;
+const LBP_BINS: usize = 16;
 
 pub(super) const COLOR_HISTOGRAM_LEN: usize = COLOR_BINS * 3;
+pub(super) const HSV_HISTOGRAM_LEN: usize = HSV_BINS * 3;
+pub(super) const COLOR_MOMENTS_LEN: usize = 12;
 pub(super) const SPATIAL_STATS_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * 2;
 pub(super) const HOG_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HOG_BINS;
+pub(super) const LBP_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * LBP_BINS;
 pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN + HOG_LEN;
+pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
 
 pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) -> Vec<f64> {
     let resized = image.resize_exact(config.width, config.height, FilterType::Triangle);
@@ -30,6 +36,29 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                 config.height as usize,
             ));
             features.extend(hog_features(
+                &gray_values,
+                config.width as usize,
+                config.height as usize,
+            ));
+            features
+        }
+        ImageFeatureMode::Rich => {
+            let rgb = resized.to_rgb8();
+            let gray_values = grayscale_pixels(&resized.to_luma8(), config.invert);
+            let mut features = color_histogram(&rgb, config.invert);
+            features.extend(spatial_intensity_stats(
+                &gray_values,
+                config.width as usize,
+                config.height as usize,
+            ));
+            features.extend(hog_features(
+                &gray_values,
+                config.width as usize,
+                config.height as usize,
+            ));
+            features.extend(hsv_histogram(&rgb, config.invert));
+            features.extend(color_moments(&rgb, config.invert));
+            features.extend(lbp_features(
                 &gray_values,
                 config.width as usize,
                 config.height as usize,
@@ -56,6 +85,15 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
             let mut features = color_histogram_from_gray(&values);
             features.extend(spatial_intensity_stats(&values, width, height));
             features.extend(hog_features(&values, width, height));
+            features
+        }
+        ImageFeatureMode::Rich => {
+            let mut features = color_histogram_from_gray(&values);
+            features.extend(spatial_intensity_stats(&values, width, height));
+            features.extend(hog_features(&values, width, height));
+            features.extend(hsv_histogram_from_gray(&values));
+            features.extend(gray_color_moments(&values));
+            features.extend(lbp_features(&values, width, height));
             features
         }
     }
@@ -105,6 +143,93 @@ fn color_histogram_from_gray(values: &[f64]) -> Vec<f64> {
     features
 }
 
+fn hsv_histogram(image: &RgbImage, invert: bool) -> Vec<f64> {
+    let mut features = vec![0.0; HSV_HISTOGRAM_LEN];
+    let pixel_count = f64::from(image.width() * image.height()).max(1.0);
+
+    for pixel in image.pixels() {
+        let r = channel_value(pixel.0[0], invert);
+        let g = channel_value(pixel.0[1], invert);
+        let b = channel_value(pixel.0[2], invert);
+        let [hue, saturation, value] = rgb_to_hsv(r, g, b);
+        for (channel, value) in [hue, saturation, value].into_iter().enumerate() {
+            let bin = (value.clamp(0.0, 1.0) * HSV_BINS as f64).floor() as usize;
+            let bin = bin.min(HSV_BINS - 1);
+            features[channel * HSV_BINS + bin] += 1.0 / pixel_count;
+        }
+    }
+
+    features
+}
+
+fn hsv_histogram_from_gray(values: &[f64]) -> Vec<f64> {
+    let mut features = vec![0.0; HSV_HISTOGRAM_LEN];
+    let pixel_count = values.len().max(1) as f64;
+
+    for value in values {
+        let value = value.clamp(0.0, 1.0);
+        let bin = (value * HSV_BINS as f64).floor() as usize;
+        let bin = bin.min(HSV_BINS - 1);
+        features[bin] += 1.0 / pixel_count;
+        features[HSV_BINS + bin] += 1.0 / pixel_count;
+        features[2 * HSV_BINS + bin] += 1.0 / pixel_count;
+    }
+
+    features
+}
+
+fn color_moments(image: &RgbImage, invert: bool) -> Vec<f64> {
+    let mut rgb_values = Vec::with_capacity((image.width() * image.height()) as usize);
+    let mut hsv_values = Vec::with_capacity(rgb_values.capacity());
+
+    for pixel in image.pixels() {
+        let r = channel_value(pixel.0[0], invert);
+        let g = channel_value(pixel.0[1], invert);
+        let b = channel_value(pixel.0[2], invert);
+        rgb_values.push([r, g, b]);
+        hsv_values.push(rgb_to_hsv(r, g, b));
+    }
+
+    let mut features = channel_mean_std(&rgb_values);
+    features.extend(channel_mean_std(&hsv_values));
+    features
+}
+
+fn gray_color_moments(values: &[f64]) -> Vec<f64> {
+    let triples = values
+        .iter()
+        .map(|value| {
+            let value = value.clamp(0.0, 1.0);
+            [value, value, value]
+        })
+        .collect::<Vec<_>>();
+    let mut features = channel_mean_std(&triples);
+    features.extend(channel_mean_std(&triples));
+    features
+}
+
+fn channel_mean_std(values: &[[f64; 3]]) -> Vec<f64> {
+    let count = values.len().max(1) as f64;
+    let mut means = [0.0; 3];
+    let mut squares = [0.0; 3];
+
+    for value in values {
+        for channel in 0..3 {
+            means[channel] += value[channel];
+            squares[channel] += value[channel] * value[channel];
+        }
+    }
+
+    let mut features = Vec::with_capacity(6);
+    for channel in 0..3 {
+        let mean = means[channel] / count;
+        let variance = (squares[channel] / count - mean * mean).max(0.0);
+        features.push(mean);
+        features.push(variance.sqrt());
+    }
+    features
+}
+
 fn spatial_intensity_stats(values: &[f64], width: usize, height: usize) -> Vec<f64> {
     let cell_count = SPATIAL_GRID * SPATIAL_GRID;
     let mut sums = vec![0.0; cell_count];
@@ -132,6 +257,85 @@ fn spatial_intensity_stats(values: &[f64], width: usize, height: usize) -> Vec<f
         features.push(variance.sqrt());
     }
     features
+}
+
+fn lbp_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
+    let mut features = vec![0.0; LBP_LEN];
+    if width < 3 || height < 3 {
+        return features;
+    }
+
+    for y in 1..height - 1 {
+        for x in 1..width - 1 {
+            let center_index = y * width + x;
+            let Some(center) = values.get(center_index).copied() else {
+                continue;
+            };
+
+            let mut code = 0u8;
+            let neighbors = [
+                (x - 1, y - 1),
+                (x, y - 1),
+                (x + 1, y - 1),
+                (x + 1, y),
+                (x + 1, y + 1),
+                (x, y + 1),
+                (x - 1, y + 1),
+                (x - 1, y),
+            ];
+            for (bit, (neighbor_x, neighbor_y)) in neighbors.into_iter().enumerate() {
+                let neighbor_index = neighbor_y * width + neighbor_x;
+                if values.get(neighbor_index).copied().unwrap_or(0.0) >= center {
+                    code |= 1 << bit;
+                }
+            }
+
+            let cell = spatial_cell(x, y, width, height);
+            let bin = usize::from(code) * LBP_BINS / 256;
+            features[cell * LBP_BINS + bin.min(LBP_BINS - 1)] += 1.0;
+        }
+    }
+
+    for cell in 0..SPATIAL_GRID * SPATIAL_GRID {
+        let start = cell * LBP_BINS;
+        let end = start + LBP_BINS;
+        let sum = features[start..end].iter().sum::<f64>();
+        if sum > f64::EPSILON {
+            for value in &mut features[start..end] {
+                *value /= sum;
+            }
+        }
+    }
+
+    features
+}
+
+fn channel_value(value: u8, invert: bool) -> f64 {
+    let value = f64::from(value) / 255.0;
+    if invert { 1.0 - value } else { value }
+}
+
+fn rgb_to_hsv(r: f64, g: f64, b: f64) -> [f64; 3] {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+
+    let hue = if delta <= f64::EPSILON {
+        0.0
+    } else if (max - r).abs() <= f64::EPSILON {
+        ((g - b) / delta).rem_euclid(6.0) / 6.0
+    } else if (max - g).abs() <= f64::EPSILON {
+        (((b - r) / delta) + 2.0) / 6.0
+    } else {
+        (((r - g) / delta) + 4.0) / 6.0
+    };
+    let saturation = if max <= f64::EPSILON {
+        0.0
+    } else {
+        delta / max
+    };
+
+    [hue.clamp(0.0, 1.0), saturation.clamp(0.0, 1.0), max]
 }
 
 fn hog_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {

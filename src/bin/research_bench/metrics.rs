@@ -11,6 +11,7 @@ pub enum CommandOutput {
     Eval(EvalMetrics),
     Prediction(PredictionOutput),
     Matrix(MatrixReport),
+    LearningCurve(LearningCurveReport),
 }
 
 #[derive(Debug, Serialize)]
@@ -119,6 +120,29 @@ pub struct MatrixSummary {
     pub mean_memory_bytes: f64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct LearningCurveReport {
+    pub model: String,
+    pub dataset: String,
+    pub image_features: String,
+    pub report_path: Option<String>,
+    pub target_mse: Option<f64>,
+    pub epochs_requested: usize,
+    pub epochs_completed: usize,
+    pub final_train_mse: f64,
+    pub rows: Vec<LearningCurveRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LearningCurveRow {
+    pub epoch: usize,
+    pub mean_mse_before: f64,
+    pub mean_mse_after: f64,
+    pub train_accuracy: f64,
+    pub test_accuracy: f64,
+    pub elapsed_ms: u128,
+}
+
 pub fn write_output(output: &CommandOutput, format: OutputFormat) -> Result<(), Box<dyn Error>> {
     match (output, format) {
         (CommandOutput::Metrics(metrics), OutputFormat::Json) => {
@@ -155,6 +179,16 @@ pub fn write_output(output: &CommandOutput, format: OutputFormat) -> Result<(), 
             println!("{}", serde_json::to_string_pretty(report)?);
         }
         (CommandOutput::Matrix(report), OutputFormat::Csv) => {
+            let mut writer = csv::Writer::from_writer(std::io::stdout());
+            for row in &report.rows {
+                writer.serialize(row)?;
+            }
+            writer.flush()?;
+        }
+        (CommandOutput::LearningCurve(report), OutputFormat::Json) => {
+            println!("{}", serde_json::to_string_pretty(report)?);
+        }
+        (CommandOutput::LearningCurve(report), OutputFormat::Csv) => {
             let mut writer = csv::Writer::from_writer(std::io::stdout());
             for row in &report.rows {
                 writer.serialize(row)?;

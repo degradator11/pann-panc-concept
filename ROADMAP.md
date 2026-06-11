@@ -16,7 +16,7 @@ The prototype can:
 - use deterministic train/test splits
 - use separate image train/eval folders through `--eval-data`
 - skip corrupt image files during folder benchmarks
-- compare image feature modes: `pixels`, `color`, `hog`, and `combined`
+- compare image feature modes: `pixels`, `color`, `hog`, `combined`, and `rich`
 - report JSON or CSV metrics
 
 Current image recognition quality is early-stage. The pipeline works, but
@@ -39,9 +39,11 @@ Cats/Dogs accuracy is still modest with classical features.
   - RGB color histograms
   - HOG-like edge buckets
   - combined color/layout/edge vector
+  - rich HSV/color-moment/texture vector
 - Separate train/eval image folders with class-name label matching
 - Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
 - Image benchmark matrix command with CSV/JSON report output
+- PANN learning-curve reports with epoch/MSE/accuracy/time rows
 - README dataset links and run instructions
 
 ## Latest Cats/Dogs Snapshot
@@ -58,7 +60,7 @@ Skipped unreadable files:
 - Train: 2 Cat, 2 Dog
 - Eval: 9 Cat, 10 Dog
 
-Results with `--image-size 32`:
+Original results with `--image-size 32`:
 
 | Model | Features | Train Accuracy | Eval Accuracy |
 | --- | --- | ---: | ---: |
@@ -74,6 +76,29 @@ Results with `--image-size 32`:
 Interpretation: `combined` features show real improvement over raw pixels,
 especially for PANN, but the model is not yet a strong cat/dog recognizer.
 
+Latest feature-quality result:
+
+| Model | Features | Image Size | Seeds | Mean Eval Accuracy | Best Eval Accuracy |
+| --- | --- | ---: | --- | ---: | ---: |
+| PANN | combined | 64 | 1,2,3 | 62.4% | 62.8% |
+| PANN | rich | 64 | 1,2,3 | 64.9% | 65.9% |
+| PANC-like | rich | 64 | 1 | 59.6% | 59.6% |
+
+Interpretation: `rich` features and 64px vectorization produce the first
+repeatable movement beyond the old 60.7% Cats/Dogs ceiling. Accuracy is still
+not production-grade, but this is a real classical-feature improvement.
+
+Latest learning-curve result, modeled after the public Progress tests page's
+target-MSE/epoch/error/time reporting:
+
+| Setting | Target MSE | Epochs Completed | Final Train MSE | Eval Accuracy |
+| --- | ---: | ---: | ---: | ---: |
+| PANN rich 64px, seed 2 | 0.02 | 8 | 0.0176 | 65.4% |
+
+Interpretation: training error can fall to a low target quickly while held-out
+accuracy stays much lower. The next bottleneck is generalization and feature
+quality, not just lowering training MSE.
+
 ## Implemented Milestone: Persistent Artifacts
 
 Training can now produce reusable model files.
@@ -81,7 +106,7 @@ Training can now produce reusable model files.
 PANN commands:
 
 ```powershell
-cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
+cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json --image-size 64 --epochs 12 --intervals 8 --image-features rich --format json
 cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval --format json
 cargo run --release --bin research-bench -- predict-pann --model models\cats-dogs-pann.json --image C:\datasets\cats-dogs\eval\Cat\cat-001.jpg --format json
 ```
@@ -89,7 +114,7 @@ cargo run --release --bin research-bench -- predict-pann --model models\cats-dog
 PANC-like commands:
 
 ```powershell
-cargo run --release --bin research-bench -- train-panc-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-panc.json --image-size 32 --image-features combined --format json
+cargo run --release --bin research-bench -- train-panc-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-panc.json --image-size 64 --image-features rich --format json
 cargo run --release --bin research-bench -- eval-panc --model models\cats-dogs-panc.json --data C:\datasets\cats-dogs\eval --format json
 cargo run --release --bin research-bench -- predict-panc --model models\cats-dogs-panc.json --image C:\datasets\cats-dogs\eval\Dog\dog-001.jpg --format json
 ```
@@ -149,27 +174,44 @@ Latest smoke report on the short Cats/Dogs train/eval folders:
 | PANC-like | pixels | 32 | 42 | 0 | 54.1% |
 | PANC-like | combined | 32 | 42 | 0 | 57.8% |
 
-## Next Milestone: Feature Quality Experiments
+## Implemented Milestone: Rich Feature Mode
 
-Goal: improve recognition quality beyond the current 60% Cats/Dogs ceiling
-using stronger classical image preprocessing before considering pretrained
+Goal: improve recognition quality beyond the 60% Cats/Dogs ceiling using
+stronger classical image preprocessing before considering pretrained
 embeddings.
 
-Planned experiments:
+Implemented additions:
 
 - HSV histograms
 - color moments
-- improved HOG normalization
 - local binary pattern texture features
-- center crop and square padding
-- simple foreground/background normalization
+- `--image-features rich`
+
+Implemented success criteria:
+
+- matrix report shows a repeatable gain across at least three seeds
+- best Cats/Dogs eval accuracy improves over 60.7%
+- feature implementation remains deterministic and dependency-light
+- README and roadmap record the new best result
+
+## Next Milestone: Image Normalization And Diagnostics
+
+Goal: understand the remaining error and improve input normalization before
+adding pretrained embeddings.
+
+Planned work:
+
+- center crop mode
+- square padding/letterbox mode
+- per-class accuracy output
+- confusion matrix output
+- compare `rich` at 64px across interval counts and resize modes
 
 Success criteria:
 
-- matrix report shows a repeatable gain across at least three seeds
-- best Cats/Dogs eval accuracy improves meaningfully over 60.7%
-- feature implementation remains deterministic and dependency-light
-- README and roadmap record the new best result
+- report shows whether Cat or Dog is driving most errors
+- resize/crop mode gives a repeatable gain, or is documented as not helpful
+- best Cats/Dogs eval accuracy improves beyond the current 65.9% best run
 
 ## Benchmark Roadmap
 
