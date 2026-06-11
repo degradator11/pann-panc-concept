@@ -11,7 +11,7 @@ use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 
 use super::datasets::{load_iris, synthetic_dataset};
 use super::{
-    Args, BenchMetrics, CommandOutput, artifact_commands, image_config, required_data_path,
+    Args, BenchMetrics, CommandOutput, artifact_commands, image_config, matrix, required_data_path,
 };
 
 pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -22,6 +22,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         "eval-panc" => artifact_commands::eval_panc(args),
         "predict-pann" => artifact_commands::predict_pann(args),
         "predict-panc" => artifact_commands::predict_panc(args),
+        "image-matrix" => matrix::run_image_matrix(args),
         "pann-iris" => run_pann(load_iris(args.data_path.as_deref())?, "iris", args)
             .map(CommandOutput::Metrics),
         "pann-synthetic" => {
@@ -57,13 +58,13 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         command => Err(format!(
-            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, or predict-panc"
+            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, or image-matrix"
         )
         .into()),
     }
 }
 
-fn run_pann(
+pub(super) fn run_pann(
     dataset: Dataset,
     dataset_name: &str,
     args: &Args,
@@ -108,7 +109,7 @@ fn run_pann(
     })
 }
 
-fn run_panc(
+pub(super) fn run_panc(
     dataset: Dataset,
     dataset_name: &str,
     args: &Args,

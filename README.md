@@ -292,6 +292,34 @@ For PANN, `epochs` and `interval_count` affect training directly. For PANC-like
 comparison, there is no iterative training; references are stored and evaluated
 with top-k similarity voting.
 
+### Benchmark Matrix
+
+Use `image-matrix` to run a repeatable grid of image-folder experiments and
+write a report file. This is useful when comparing PANN vs PANC-like behavior,
+feature modes, image sizes, interval counts, and random seeds.
+
+Small Cats/Dogs matrix:
+
+```powershell
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined --matrix-image-sizes 32 --matrix-intervals 8 --matrix-seeds 42 --epochs 12
+```
+
+Larger matrix:
+
+```powershell
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined --matrix-image-sizes 16,32 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --epochs 12
+```
+
+Notes:
+
+- PANN runs once per interval count.
+- PANC-like comparison ignores interval count and runs once per
+  model/feature/image-size/seed.
+- CSV output contains per-run rows.
+- JSON output contains per-run rows plus grouped summaries with mean/min/max
+  accuracy.
+- Generated `reports/` files are ignored by git.
+
 ### Persistent Training Artifacts
 
 The in-memory benchmark commands train and evaluate in one run. To train once

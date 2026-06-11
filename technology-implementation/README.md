@@ -66,6 +66,10 @@ The benchmark CLI also supports persistent image artifacts with
 `train-panc-image-folder`, `eval-panc`, and `predict-panc`. See the root
 README's artifact section for the full command examples.
 
+For repeatable sweeps, use `image-matrix` to compare models, feature modes,
+image sizes, intervals, and seeds while writing CSV or JSON reports under the
+ignored `reports/` directory.
+
 ## Legal boundary
 
 These notes are for technical analysis. They are not legal advice. Several

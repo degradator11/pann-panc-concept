@@ -41,6 +41,7 @@ Cats/Dogs accuracy is still modest with classical features.
   - combined color/layout/edge vector
 - Separate train/eval image folders with class-name label matching
 - Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
+- Image benchmark matrix command with CSV/JSON report output
 - README dataset links and run instructions
 
 ## Latest Cats/Dogs Snapshot
@@ -119,17 +120,18 @@ Latest smoke result on the short Cats/Dogs train/eval folders:
 
 The saved-artifact eval results match the prior in-memory benchmark results.
 
-## Next Milestone: Benchmark Matrix
+## Implemented Milestone: Benchmark Matrix
 
-Goal: run repeatable experiment grids instead of one command at a time.
+The CLI can now run repeatable experiment grids instead of one command at a
+time.
 
-Planned command shape:
+Small matrix command:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined --matrix-image-sizes 32 --matrix-intervals 8 --matrix-seeds 42 --epochs 12
 ```
 
-Success criteria:
+Implemented success criteria:
 
 - run PANN/PANC-like benchmarks across multiple seeds
 - compare feature modes, image sizes, and interval counts
@@ -138,18 +140,45 @@ Success criteria:
 - include train/inference time and memory estimates
 - keep generated reports under ignored `reports/`
 
+Latest smoke report on the short Cats/Dogs train/eval folders:
+
+| Model | Features | Image Size | Seed | Intervals | Eval Accuracy |
+| --- | --- | ---: | ---: | ---: | ---: |
+| PANN | pixels | 32 | 42 | 8 | 54.2% |
+| PANN | combined | 32 | 42 | 8 | 60.7% |
+| PANC-like | pixels | 32 | 42 | 0 | 54.1% |
+| PANC-like | combined | 32 | 42 | 0 | 57.8% |
+
+## Next Milestone: Feature Quality Experiments
+
+Goal: improve recognition quality beyond the current 60% Cats/Dogs ceiling
+using stronger classical image preprocessing before considering pretrained
+embeddings.
+
+Planned experiments:
+
+- HSV histograms
+- color moments
+- improved HOG normalization
+- local binary pattern texture features
+- center crop and square padding
+- simple foreground/background normalization
+
+Success criteria:
+
+- matrix report shows a repeatable gain across at least three seeds
+- best Cats/Dogs eval accuracy improves meaningfully over 60.7%
+- feature implementation remains deterministic and dependency-light
+- README and roadmap record the new best result
+
 ## Benchmark Roadmap
 
 Planned benchmark improvements:
 
-- run multiple seeds automatically
-- emit summary tables for mean/min/max accuracy
-- compare image sizes such as 16, 32, and 64
-- compare interval counts such as 4, 8, 16, and 32
 - compare PANN correction modes
 - add confusion matrix output
 - add per-class accuracy output
-- store benchmark output files under an ignored `reports/` directory
+- add optional top-N report sorting
 
 ## Feature Roadmap
 

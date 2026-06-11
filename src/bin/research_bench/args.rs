@@ -3,7 +3,7 @@ use std::error::Error;
 
 use progress_ai::vision::{ImageFeatureMode, ImageVectorConfig};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Args {
     pub command: String,
     pub format: OutputFormat,
@@ -20,6 +20,11 @@ pub struct Args {
     pub image_features: ImageFeatureMode,
     pub samples_per_class: usize,
     pub top_k: usize,
+    pub matrix_models: Vec<MatrixModel>,
+    pub matrix_features: Vec<ImageFeatureMode>,
+    pub matrix_image_sizes: Vec<u32>,
+    pub matrix_intervals: Vec<usize>,
+    pub matrix_seeds: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,10 +33,16 @@ pub enum OutputFormat {
     Csv,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatrixModel {
+    Pann,
+    Panc,
+}
+
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--image-features pixels|color|hog|combined] [--samples-per-class n] [--top-k n]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--image-features pixels|color|hog|combined] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3]",
     )?;
 
     let mut args = Args {
@@ -50,6 +61,11 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         image_features: ImageFeatureMode::Pixels,
         samples_per_class: 80,
         top_k: 3,
+        matrix_models: Vec::new(),
+        matrix_features: Vec::new(),
+        matrix_image_sizes: Vec::new(),
+        matrix_intervals: Vec::new(),
+        matrix_seeds: Vec::new(),
     };
 
     while let Some(flag) = raw.next() {
@@ -124,11 +140,70 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .ok_or("--top-k requires a value")?
                     .parse::<usize>()?;
             }
+            "--matrix-models" => {
+                args.matrix_models =
+                    parse_matrix_models(&raw.next().ok_or("--matrix-models requires a value")?)?;
+            }
+            "--matrix-features" => {
+                args.matrix_features = parse_image_features_list(
+                    &raw.next().ok_or("--matrix-features requires a value")?,
+                )?;
+            }
+            "--matrix-image-sizes" => {
+                args.matrix_image_sizes =
+                    parse_number_list(&raw.next().ok_or("--matrix-image-sizes requires a value")?)?;
+            }
+            "--matrix-intervals" => {
+                args.matrix_intervals =
+                    parse_number_list(&raw.next().ok_or("--matrix-intervals requires a value")?)?;
+            }
+            "--matrix-seeds" => {
+                args.matrix_seeds =
+                    parse_number_list(&raw.next().ok_or("--matrix-seeds requires a value")?)?;
+            }
             other => return Err(format!("unknown option {other}").into()),
         }
     }
 
     Ok(args)
+}
+
+fn parse_matrix_models(value: &str) -> Result<Vec<MatrixModel>, Box<dyn Error>> {
+    split_csv_values(value)
+        .into_iter()
+        .map(|model| match model {
+            "pann" => Ok(MatrixModel::Pann),
+            "panc" | "panc_like" | "panc-like" => Ok(MatrixModel::Panc),
+            other => Err(format!("invalid matrix model {other:?}; expected pann or panc").into()),
+        })
+        .collect()
+}
+
+fn parse_image_features_list(value: &str) -> Result<Vec<ImageFeatureMode>, Box<dyn Error>> {
+    split_csv_values(value)
+        .into_iter()
+        .map(|feature| feature.parse::<ImageFeatureMode>().map_err(Into::into))
+        .collect()
+}
+
+fn parse_number_list<T>(value: &str) -> Result<Vec<T>, Box<dyn Error>>
+where
+    T: std::str::FromStr,
+    T::Err: Error + 'static,
+{
+    split_csv_values(value)
+        .into_iter()
+        .map(str::parse::<T>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Into::into)
+}
+
+fn split_csv_values(value: &str) -> Vec<&str> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect()
 }
 
 pub fn image_config(args: &Args) -> ImageVectorConfig {
