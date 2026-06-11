@@ -22,6 +22,11 @@ The prototype can:
 Current image recognition quality is early-stage. The pipeline works, but
 Cats/Dogs accuracy is still modest with classical features.
 
+The main new finding is that training can drive PANN train error down over
+multiple epochs, but held-out Cats/Dogs accuracy still plateaus around 64-66%.
+That means the near-term bottleneck is image representation and diagnostics,
+not artifact persistence or simply running more epochs.
+
 ## Completed Milestones
 
 - Initial Rust crate outside `technology-implementation/`
@@ -45,6 +50,31 @@ Cats/Dogs accuracy is still modest with classical features.
 - Image benchmark matrix command with CSV/JSON report output
 - PANN learning-curve reports with epoch/MSE/accuracy/time rows
 - README dataset links and run instructions
+
+## Current Working Interpretation
+
+What is working:
+
+- PANN/PANC image-folder commands are usable for real class-folder datasets.
+- Saved image artifacts work for train once, evaluate later, and predict one
+  image workflows.
+- Rich handcrafted features improve Cats/Dogs eval accuracy over raw pixels,
+  HOG-only, and the earlier combined feature vector.
+- Learning-curve reports now show whether PANN is actually reducing training
+  error step by step.
+
+What is still weak:
+
+- Eval accuracy is far below train accuracy, so the model is overfitting the
+  small training sample and/or the feature vector is not general enough.
+- Artifact persistence was necessary infrastructure, but it does not improve
+  recognition quality by itself.
+- We do not yet know whether most failures come from Cat, Dog, corrupt/odd
+  inputs, image framing, or weak visual descriptors.
+
+Decision: keep the next milestone focused on diagnostics and normalization.
+Only after we can see the failures clearly should we add heavier feature
+extractors or more model complexity.
 
 ## Latest Cats/Dogs Snapshot
 
@@ -99,6 +129,13 @@ Interpretation: training error can fall to a low target quickly while held-out
 accuracy stays much lower. The next bottleneck is generalization and feature
 quality, not just lowering training MSE.
 
+Learning-curve takeaway:
+
+- Multiple training steps are visible and measurable.
+- Train MSE reached the target by epoch 8 in the smoke run.
+- Eval accuracy did not rise at the same rate, so more epochs alone are not
+  the next best lever.
+
 ## Implemented Milestone: Persistent Artifacts
 
 Training can now produce reusable model files.
@@ -140,10 +177,12 @@ Latest smoke result on the short Cats/Dogs train/eval folders:
 
 | Command | Accuracy |
 | --- | ---: |
-| `eval-pann` from saved artifact | 60.7% |
+| `eval-pann`, combined 32px artifact | 60.7% |
+| `eval-pann`, rich 64px artifact | 64.3% |
 | `eval-panc` from saved artifact | 57.8% |
 
-The saved-artifact eval results match the prior in-memory benchmark results.
+The saved-artifact eval results match the corresponding in-memory benchmark
+settings. This confirms persistence correctness, not a quality improvement.
 
 ## Implemented Milestone: Benchmark Matrix
 
@@ -201,36 +240,50 @@ adding pretrained embeddings.
 
 Planned work:
 
-- center crop mode
-- square padding/letterbox mode
-- per-class accuracy output
-- confusion matrix output
-- compare `rich` at 64px across interval counts and resize modes
+- add explicit image resize modes:
+  - `stretch`, the current behavior
+  - `center-crop`, useful when the object is centered and background varies
+  - `letterbox`, useful when aspect ratio should be preserved
+- store resize mode inside persisted image artifacts
+- add per-class accuracy output for image eval and matrix runs
+- add confusion matrix output
+- add optional misclassified-example report with path, expected label,
+  predicted label, and confidence/margin where available
+- compare `rich` at 64px across interval counts, seeds, and resize modes
 
 Success criteria:
 
 - report shows whether Cat or Dog is driving most errors
+- report includes enough image paths to inspect repeated failure patterns
 - resize/crop mode gives a repeatable gain, or is documented as not helpful
 - best Cats/Dogs eval accuracy improves beyond the current 65.9% best run
+
+Suggested first experiment after implementation:
+
+```powershell
+cargo run --release --bin research-bench -- image-matrix --data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_short --eval-data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_short\Eval --out reports\cats-dogs-normalization-matrix.csv --format csv --matrix-models pann --matrix-features rich --matrix-image-sizes 64 --matrix-intervals 6,8,12 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
+```
 
 ## Benchmark Roadmap
 
 Planned benchmark improvements:
 
 - compare PANN correction modes
-- add confusion matrix output
-- add per-class accuracy output
 - add optional top-N report sorting
+- add train-vs-eval overfit summary to matrix reports
+- add best-row summary for matrix CSV/JSON runs
+- add optional misclassification report path for image evaluation
 
 ## Feature Roadmap
 
 Classical image features to try before pretrained embeddings:
 
-- HSV histograms
-- color moments
+- improved HSV histograms with spatial regions
+- normalized color moments
 - improved HOG cell/block normalization
-- local binary patterns or other texture descriptors
-- center crop and square padding modes
+- multi-scale local binary patterns or other texture descriptors
+- edge density by image region
+- simple symmetry/layout features
 - simple foreground/background normalization for object datasets
 
 Optional later feature path:
@@ -238,6 +291,8 @@ Optional later feature path:
 - pretrained image embeddings as input vectors for PANN/PANC
 - keep this optional and clearly separate from the public-source classical
   reconstruction
+- compare against a small conventional baseline so we know whether the
+  bottleneck is PANN/PANC or the feature vector itself
 
 ## Dataset Roadmap
 
@@ -257,6 +312,10 @@ Useful datasets to test:
 - Which PANN interval count is best for low-dimensional handcrafted features?
 - Should PANN training use matrix/batch updates for image benchmarks?
 - What is the most useful default benchmark matrix for fast iteration?
+- Does preserving aspect ratio help Cats/Dogs more than stretching?
+- Are failures concentrated in one class or in ambiguous/corrupt images?
+- At what point do classical features stop paying off compared with using an
+  external embedding model as a fixed vectorizer?
 
 ## Out Of Scope For Now
 
