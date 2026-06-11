@@ -3,6 +3,7 @@ mod artifact_commands;
 mod artifacts;
 mod datasets;
 mod debug_report;
+mod folder_commands;
 mod learning_curve;
 mod matrix;
 mod metrics;

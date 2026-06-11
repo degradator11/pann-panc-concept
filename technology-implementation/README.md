@@ -84,6 +84,9 @@ The debug report is now failure-analysis oriented. It ranks high-confidence
 wrong and ambiguous wrong samples, buckets errors by simple image statistics,
 compares resize-mode predictions, and can show nearest training examples in
 the same scaled feature space.
+The same report can be written from in-memory `pann-image-folder` and
+`panc-image-folder` benchmark runs with `--debug-out`; saving an artifact first
+is no longer required.
 
 For repeatable sweeps, use `image-matrix` to compare models, feature modes,
 image sizes, resize modes, intervals, and seeds while writing CSV or JSON

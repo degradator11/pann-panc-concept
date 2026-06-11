@@ -290,6 +290,9 @@ Implemented in the first pass:
   selected samples
 - debug reports can show nearest training images in the same scaled feature
   space through inferred or explicit train-data folders
+- in-memory `pann-image-folder` and `panc-image-folder` commands can write the
+  same static debug reports with `--debug-out`, without saving a model artifact
+  first
 
 Remaining planned work:
 
@@ -347,8 +350,7 @@ least-squares difference as the default image benchmark mode.
 
 Planned benchmark improvements:
 
-- add debug-report support to in-memory folder benchmarks, not only artifact
-  evaluation
+- none currently open
 
 ## Feature Roadmap
 

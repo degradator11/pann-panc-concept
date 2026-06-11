@@ -143,12 +143,7 @@ pub fn train_test_split(
     test_ratio: f64,
     seed: u64,
 ) -> SplitDataset {
-    let mut indexes = (0..samples.len()).collect::<Vec<_>>();
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    indexes.shuffle(&mut rng);
-
-    let test_count = ((samples.len() as f64) * test_ratio.clamp(0.0, 1.0)).round() as usize;
-    let (test_indexes, train_indexes) = indexes.split_at(test_count.min(indexes.len()));
+    let (test_indexes, train_indexes) = train_test_split_indices(samples.len(), test_ratio, seed);
 
     let collect_samples = |indexes: &[usize]| {
         indexes
@@ -164,11 +159,25 @@ pub fn train_test_split(
     };
 
     SplitDataset {
-        train_samples: collect_samples(train_indexes),
-        train_labels: collect_labels(train_indexes),
-        test_samples: collect_samples(test_indexes),
-        test_labels: collect_labels(test_indexes),
+        train_samples: collect_samples(&train_indexes),
+        train_labels: collect_labels(&train_indexes),
+        test_samples: collect_samples(&test_indexes),
+        test_labels: collect_labels(&test_indexes),
     }
+}
+
+pub fn train_test_split_indices(
+    sample_count: usize,
+    test_ratio: f64,
+    seed: u64,
+) -> (Vec<usize>, Vec<usize>) {
+    let mut indexes = (0..sample_count).collect::<Vec<_>>();
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    indexes.shuffle(&mut rng);
+
+    let test_count = ((sample_count as f64) * test_ratio.clamp(0.0, 1.0)).round() as usize;
+    let (test_indexes, train_indexes) = indexes.split_at(test_count.min(indexes.len()));
+    (test_indexes.to_vec(), train_indexes.to_vec())
 }
 
 fn percentile_sorted(values: &[f64], quantile: f64) -> f64 {

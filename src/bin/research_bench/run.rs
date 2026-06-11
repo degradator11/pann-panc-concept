@@ -12,7 +12,7 @@ use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 use super::datasets::{load_iris, synthetic_dataset};
 use super::{
     Args, BenchMetrics, CommandOutput, artifact_commands, classification_metrics,
-    correction_mode_name, image_config, learning_curve, matrix, required_data_path,
+    correction_mode_name, folder_commands, image_config, learning_curve, matrix,
 };
 
 pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -36,12 +36,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
             args,
         )
         .map(CommandOutput::Metrics),
-        "pann-image-folder" => run_pann(
-            load_image_folder(required_data_path(args)?, image_config(args))?,
-            "image-folder",
-            args,
-        )
-        .map(CommandOutput::Metrics),
+        "pann-image-folder" => folder_commands::run_pann_image_folder(args),
         "panc-iris" => run_panc(load_iris(args.data_path.as_deref())?, "iris", args)
             .map(CommandOutput::Metrics),
         "panc-synthetic" => {
@@ -53,12 +48,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
             args,
         )
         .map(CommandOutput::Metrics),
-        "panc-image-folder" => run_panc(
-            load_image_folder(required_data_path(args)?, image_config(args))?,
-            "image-folder",
-            args,
-        )
-        .map(CommandOutput::Metrics),
+        "panc-image-folder" => folder_commands::run_panc_image_folder(args),
         command => Err(format!(
             "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, or pann-learning-curve"
         )

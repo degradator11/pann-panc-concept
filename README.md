@@ -218,6 +218,16 @@ cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets
 cargo run --release --bin research-bench -- panc-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 64 --image-features rich --format json
 ```
 
+In-memory image-folder benchmarks can also write the static debug report
+without saving a model artifact first:
+
+```powershell
+cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 64 --image-features rich --image-resize center-crop --intervals 12 --epochs 12 --debug-out reports\cats-dogs-in-memory-debug --debug-limit 25 --debug-samples misclassified --format json
+```
+
+The debug report uses the in-memory training split as nearest-neighbor
+references unless `--debug-train-data` is provided.
+
 Nested directories that do not contain images directly, such as `Eval`, are not
 treated as training classes.
 
