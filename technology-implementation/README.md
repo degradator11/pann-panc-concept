@@ -93,6 +93,8 @@ Matrix reports now include the same class-level questions we kept asking by
 hand: per-class accuracy, confusion matrix, worst class, most common confusion,
 and train-vs-eval overfit gap. CSV matrix runs also write a sibling
 `*.summary.csv` file with pooled class accuracy and best-seed summaries.
+They can also sweep PANN correction modes with
+`--matrix-correction-modes difference-ls,patent-proportional,ratio`.
 
 The public Progress tests page reports target MSE, epoch/error, and training
 time. The prototype mirrors that reporting style with `pann-learning-curve`,

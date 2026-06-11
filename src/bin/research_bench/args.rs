@@ -1,6 +1,7 @@
 use std::env;
 use std::error::Error;
 
+use progress_ai::pann::CorrectionMode;
 use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, ImageVectorConfig};
 
 #[derive(Debug, Clone)]
@@ -14,6 +15,7 @@ pub struct Args {
     pub image_path: Option<String>,
     pub epochs: usize,
     pub intervals: usize,
+    pub correction_mode: CorrectionMode,
     pub seed: u64,
     pub image_width: u32,
     pub image_height: u32,
@@ -28,6 +30,7 @@ pub struct Args {
     pub matrix_intervals: Vec<usize>,
     pub matrix_seeds: Vec<u64>,
     pub matrix_resize_modes: Vec<ImageResizeMode>,
+    pub matrix_correction_modes: Vec<CorrectionMode>,
     pub debug_out_path: Option<String>,
     pub debug_train_data_path: Option<String>,
     pub debug_limit: usize,
@@ -67,7 +70,7 @@ impl DebugSamples {
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich] [--image-resize stretch|center-crop|letterbox] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined,rich] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich] [--image-resize stretch|center-crop|letterbox] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc] [--matrix-features pixels,combined,rich] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n]",
     )?;
 
     let mut args = Args {
@@ -80,6 +83,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         image_path: None,
         epochs: 12,
         intervals: 8,
+        correction_mode: CorrectionMode::DifferenceLeastSquares,
         seed: 42,
         image_width: 16,
         image_height: 16,
@@ -94,6 +98,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         matrix_intervals: Vec::new(),
         matrix_seeds: Vec::new(),
         matrix_resize_modes: Vec::new(),
+        matrix_correction_modes: Vec::new(),
         debug_out_path: None,
         debug_train_data_path: None,
         debug_limit: 50,
@@ -128,6 +133,11 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .next()
                     .ok_or("--intervals requires a value")?
                     .parse::<usize>()?;
+            }
+            "--correction-mode" => {
+                args.correction_mode = parse_correction_mode(
+                    &raw.next().ok_or("--correction-mode requires a value")?,
+                )?;
             }
             "--seed" => {
                 args.seed = raw
@@ -212,6 +222,12 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     &raw.next().ok_or("--matrix-resize-modes requires a value")?,
                 )?;
             }
+            "--matrix-correction-modes" => {
+                args.matrix_correction_modes = parse_correction_modes_list(
+                    &raw.next()
+                        .ok_or("--matrix-correction-modes requires a value")?,
+                )?;
+            }
             "--debug" | "--debug-out" => {
                 args.debug_out_path = Some(raw.next().ok_or("--debug-out requires a value")?);
             }
@@ -265,6 +281,40 @@ fn parse_image_resize_modes_list(value: &str) -> Result<Vec<ImageResizeMode>, Bo
         .into_iter()
         .map(|mode| mode.parse::<ImageResizeMode>().map_err(Into::into))
         .collect()
+}
+
+fn parse_correction_modes_list(value: &str) -> Result<Vec<CorrectionMode>, Box<dyn Error>> {
+    split_csv_values(value)
+        .into_iter()
+        .map(parse_correction_mode)
+        .collect()
+}
+
+fn parse_correction_mode(value: &str) -> Result<CorrectionMode, Box<dyn Error>> {
+    match value {
+        "difference-ls" | "difference_ls" | "least-squares" | "least_squares"
+        | "difference-least-squares" | "difference_least_squares" => {
+            Ok(CorrectionMode::DifferenceLeastSquares)
+        }
+        "patent-proportional" | "patent_proportional" | "difference-patent-proportional"
+        | "difference_patent_proportional" => Ok(CorrectionMode::DifferencePatentProportional),
+        "ratio" => Ok(CorrectionMode::Ratio {
+            epsilon: 1e-9,
+            max_abs_factor: 100.0,
+        }),
+        other => Err(format!(
+            "invalid correction mode {other:?}; expected difference-ls, patent-proportional, or ratio"
+        )
+        .into()),
+    }
+}
+
+pub const fn correction_mode_name(mode: CorrectionMode) -> &'static str {
+    match mode {
+        CorrectionMode::DifferenceLeastSquares => "difference_least_squares",
+        CorrectionMode::DifferencePatentProportional => "difference_patent_proportional",
+        CorrectionMode::Ratio { .. } => "ratio",
+    }
 }
 
 fn parse_debug_samples(value: &str) -> Result<DebugSamples, Box<dyn Error>> {

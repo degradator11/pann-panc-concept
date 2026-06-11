@@ -18,6 +18,7 @@ The prototype can:
 - skip corrupt image files during folder benchmarks
 - compare image feature modes: `pixels`, `color`, `hog`, `combined`, and `rich`
 - compare image resize modes: `stretch`, `center-crop`, and `letterbox`
+- compare PANN correction modes in benchmark matrix runs
 - report JSON or CSV metrics
 - write static image eval debug reports with original/processed images,
   prediction rows, scaled feature vectors, and HTML summary
@@ -50,7 +51,8 @@ not artifact persistence or simply running more epochs.
   - rich HSV/color-moment/texture vector
 - Separate train/eval image folders with class-name label matching
 - Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
-- Image benchmark matrix command with CSV/JSON report output
+- Image benchmark matrix command with CSV/JSON report output, including
+  correction-mode sweeps for PANN
 - PANN learning-curve reports with epoch/MSE/accuracy/time rows
 - Image resize modes for stretch, center-crop, and letterbox preprocessing
 - Artifact eval diagnostics with per-class accuracy, confusion matrix, and a
@@ -266,6 +268,8 @@ Implemented in the first pass:
   worst mean class, best seed, best test accuracy, and mean overfit gap
 - CSV matrix output writes a sibling `*.summary.csv` file beside the per-run
   row CSV
+- `image-matrix` can sweep PANN correction modes with
+  `--matrix-correction-modes`
 - artifact eval can write static debug reports:
   - `index.html`
   - `config.json`
@@ -324,11 +328,23 @@ run at seed 3 / 8 intervals. It still leaves Dogs as the weaker class in most
 center-crop settings, so the next quality lever is feature extraction or class
 calibration, not more epochs alone.
 
+Focused correction-mode comparison, using PANN rich 64px center-crop,
+12 intervals, seed 2, and 12 epochs:
+
+| Correction Mode | Eval Accuracy | Worst Class |
+| --- | ---: | --- |
+| difference least squares | 68.6% | Dog, 68.3% |
+| difference patent proportional | 68.6% | Dog, 68.3% |
+| ratio | 53.9% | Cat, 46.7% |
+
+Interpretation: the two difference-style update rules tie on this smoke run,
+while ratio update is much weaker for the current image vectors. Keep
+least-squares difference as the default image benchmark mode.
+
 ## Benchmark Roadmap
 
 Planned benchmark improvements:
 
-- compare PANN correction modes
 - add optional top-N report sorting
 - add debug-report support to in-memory folder benchmarks, not only artifact
   evaluation

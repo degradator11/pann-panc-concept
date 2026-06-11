@@ -3,7 +3,7 @@ use std::error::Error;
 use std::time::Instant;
 
 use progress_ai::panc::{PancComparator, SimilarityMetric};
-use progress_ai::pann::{CorrectionMode, Distributor, IntervalStrategy, PannConfig, PannModel};
+use progress_ai::pann::{Distributor, IntervalStrategy, PannConfig, PannModel};
 use progress_ai::preprocess::{
     Dataset, SplitDataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split,
 };
@@ -11,8 +11,8 @@ use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 
 use super::datasets::{load_iris, synthetic_dataset};
 use super::{
-    Args, BenchMetrics, CommandOutput, artifact_commands, classification_metrics, image_config,
-    learning_curve, matrix, required_data_path,
+    Args, BenchMetrics, CommandOutput, artifact_commands, classification_metrics,
+    correction_mode_name, image_config, learning_curve, matrix, required_data_path,
 };
 
 pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -81,7 +81,7 @@ pub(super) fn run_pann(
     let mut config = PannConfig::new(train_samples[0].len(), args.intervals, output_count);
     config.distributor = Distributor::Triangular;
     config.interval_strategy = IntervalStrategy::Uniform;
-    config.correction_mode = CorrectionMode::DifferenceLeastSquares;
+    config.correction_mode = args.correction_mode;
     let mut model = PannModel::from_training_data_with_config(&train_samples, config)?;
 
     let train_start = Instant::now();
@@ -115,7 +115,7 @@ pub(super) fn run_pann(
         epochs: args.epochs,
         interval_count: args.intervals,
         distributor: "triangular".to_string(),
-        correction_mode: "difference_least_squares".to_string(),
+        correction_mode: correction_mode_name(args.correction_mode).to_string(),
         per_class_accuracy: test_diagnostics.per_class_accuracy,
         confusion_matrix: test_diagnostics.confusion_matrix,
     })

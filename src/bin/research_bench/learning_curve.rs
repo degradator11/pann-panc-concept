@@ -3,14 +3,14 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-use progress_ai::pann::{CorrectionMode, Distributor, IntervalStrategy, PannConfig, PannModel};
+use progress_ai::pann::{Distributor, IntervalStrategy, PannConfig, PannModel};
 use progress_ai::preprocess::{min_max_ranges, min_max_scale, one_hot_labels};
 use progress_ai::vision::load_image_folder;
 
 use super::run::evaluation_split;
 use super::{
-    Args, CommandOutput, LearningCurveReport, LearningCurveRow, OutputFormat, image_config,
-    required_data_path,
+    Args, CommandOutput, LearningCurveReport, LearningCurveRow, OutputFormat, correction_mode_name,
+    image_config, required_data_path,
 };
 
 pub fn run_pann_learning_curve(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -26,7 +26,7 @@ pub fn run_pann_learning_curve(args: &Args) -> Result<CommandOutput, Box<dyn Err
     let mut config = PannConfig::new(train_samples[0].len(), args.intervals, output_count);
     config.distributor = Distributor::Triangular;
     config.interval_strategy = IntervalStrategy::Uniform;
-    config.correction_mode = CorrectionMode::DifferenceLeastSquares;
+    config.correction_mode = args.correction_mode;
     let mut model = PannModel::from_training_data_with_config(&train_samples, config)?;
 
     let start = Instant::now();
@@ -55,6 +55,7 @@ pub fn run_pann_learning_curve(args: &Args) -> Result<CommandOutput, Box<dyn Err
         dataset: "image-folder".to_string(),
         image_features: args.image_features.as_str().to_string(),
         image_resize: args.image_resize.as_str().to_string(),
+        correction_mode: correction_mode_name(args.correction_mode).to_string(),
         report_path: args.out_path.clone(),
         target_mse: args.target_mse,
         epochs_requested: args.epochs,

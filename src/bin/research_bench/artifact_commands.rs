@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use progress_ai::panc::{PancComparator, SimilarityMetric};
-use progress_ai::pann::{
-    CorrectionMode, Distributor, IntervalStrategy, PannConfig, PannModel, argmax,
-};
+use progress_ai::pann::{Distributor, IntervalStrategy, PannConfig, PannModel, argmax};
 use progress_ai::preprocess::{
     Dataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split,
 };
@@ -21,9 +19,10 @@ use super::artifacts::{
 use super::{
     Args, ArtifactMetrics, ClassScore, CommandOutput, ConfusionRow, DebugReference, EvalMetrics,
     ImageEvalDebugData, ImageEvalPrediction, MisclassifiedExample, PerClassAccuracy,
-    PredictionNeighbor, PredictionOutput, ResizePrediction, SampleResizeComparison, image_config,
-    required_data_path, required_image_path, required_model_path, required_out_path,
-    selected_prediction_indices, write_image_eval_debug_report,
+    PredictionNeighbor, PredictionOutput, ResizePrediction, SampleResizeComparison,
+    correction_mode_name, image_config, required_data_path, required_image_path,
+    required_model_path, required_out_path, selected_prediction_indices,
+    write_image_eval_debug_report,
 };
 
 const MAX_MISCLASSIFIED_EXAMPLES: usize = 25;
@@ -63,7 +62,7 @@ pub fn train_pann_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Err
     );
     config.distributor = Distributor::Triangular;
     config.interval_strategy = IntervalStrategy::Uniform;
-    config.correction_mode = CorrectionMode::DifferenceLeastSquares;
+    config.correction_mode = args.correction_mode;
     let mut model = PannModel::from_training_data_with_config(&train_samples, config)?;
 
     let train_start = Instant::now();
@@ -96,6 +95,7 @@ pub fn train_pann_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Err
         memory_bytes: model.memory_bytes_estimate(),
         epochs: args.epochs,
         interval_count: args.intervals,
+        correction_mode: correction_mode_name(args.correction_mode).to_string(),
         reference_count: 0,
     }))
 }
@@ -147,6 +147,7 @@ pub fn train_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Err
         memory_bytes,
         epochs: 0,
         interval_count: 0,
+        correction_mode: "top_k_euclidean_vote".to_string(),
         reference_count,
     }))
 }

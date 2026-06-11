@@ -95,6 +95,7 @@ Useful options:
 --data path\to\iris.csv
 --epochs 12
 --intervals 8
+--correction-mode difference-ls|patent-proportional|ratio
 --seed 42
 --image-size 16
 --image-width 16
@@ -337,6 +338,9 @@ Notes:
 - PANC-like comparison ignores interval count and runs once per
   model/feature/image-size/seed.
 - `--matrix-resize-modes` adds resize/normalization modes to the sweep.
+- `--matrix-correction-modes` adds PANN correction/update modes to the sweep.
+  PANC-like comparison ignores this option because it does not use PANN
+  correction rules.
 - CSV output contains per-run rows. When `--out reports\name.csv` is used, the
   command also writes `reports\name.summary.csv`.
 - JSON output contains per-run rows plus grouped summaries with mean/min/max
@@ -358,6 +362,17 @@ pooled_test_per_class_accuracy
 worst_mean_class_name
 worst_mean_class_accuracy
 ```
+
+Correction-mode matrix:
+
+```powershell
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-correction-matrix.csv --format csv --matrix-models pann --matrix-features rich --matrix-image-sizes 64 --matrix-intervals 12 --matrix-seeds 2 --matrix-resize-modes center-crop --matrix-correction-modes difference-ls,patent-proportional,ratio --epochs 12
+```
+
+On the short Cats/Dogs dataset, the focused correction-mode smoke run found
+`difference-ls` and `patent-proportional` tied at **68.6%** eval accuracy, while
+`ratio` fell to **53.9%**. Keep `difference-ls` as the default for image work
+until broader evidence says otherwise.
 
 ### Learning Curve Reports
 
