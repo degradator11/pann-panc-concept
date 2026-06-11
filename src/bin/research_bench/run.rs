@@ -10,7 +10,7 @@ use progress_ai::preprocess::{
 };
 use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 
-use super::datasets::{load_iris, synthetic_dataset};
+use super::datasets::{load_embedding_csv, load_iris, synthetic_dataset};
 use super::{
     Args, BenchMetrics, CommandOutput, artifact_commands, classification_metrics,
     correction_mode_name, folder_commands, image_config, learning_curve, matrix,
@@ -38,6 +38,12 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         "pann-image-folder" => folder_commands::run_pann_image_folder(args),
+        "pann-embedding-csv" => run_pann(
+            load_embedding_csv(required_data_path_for_run(args)?)?,
+            "embedding-csv",
+            args,
+        )
+        .map(CommandOutput::Metrics),
         "panc-iris" => run_panc(load_iris(args.data_path.as_deref())?, "iris", args)
             .map(CommandOutput::Metrics),
         "panc-synthetic" => {
@@ -50,6 +56,12 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         "panc-image-folder" => folder_commands::run_panc_image_folder(args),
+        "panc-embedding-csv" => run_panc(
+            load_embedding_csv(required_data_path_for_run(args)?)?,
+            "embedding-csv",
+            args,
+        )
+        .map(CommandOutput::Metrics),
         "centroid-iris" => run_centroid(load_iris(args.data_path.as_deref())?, "iris", args)
             .map(CommandOutput::Metrics),
         "centroid-synthetic" => {
@@ -68,8 +80,14 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
             args,
         )
         .map(CommandOutput::Metrics),
+        "centroid-embedding-csv" => run_centroid(
+            load_embedding_csv(required_data_path_for_run(args)?)?,
+            "embedding-csv",
+            args,
+        )
+        .map(CommandOutput::Metrics),
         command => Err(format!(
-            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, or pann-learning-curve"
+            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, pann-embedding-csv, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, panc-embedding-csv, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, centroid-embedding-csv, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, or pann-learning-curve"
         )
         .into()),
     }
@@ -247,11 +265,17 @@ pub(super) fn evaluation_split(
         ));
     };
 
-    if dataset_name != "image-folder" {
-        return Err("--eval-data is only supported by image-folder benchmarks".into());
+    if dataset_name != "image-folder" && dataset_name != "embedding-csv" {
+        return Err(
+            "--eval-data is only supported by image-folder and embedding-csv benchmarks".into(),
+        );
     }
 
-    let eval_dataset = load_image_folder(eval_path, image_config(args))?;
+    let eval_dataset = if dataset_name == "image-folder" {
+        load_image_folder(eval_path, image_config(args))?
+    } else {
+        load_embedding_csv(eval_path)?
+    };
     let train = train_test_split(&dataset.samples, &dataset.labels, 0.0, args.seed);
     let test_labels = remap_labels_by_class_name(&eval_dataset, &dataset.class_names)?;
     Ok(SplitDataset {
@@ -294,6 +318,8 @@ fn remap_labels_by_class_name(
 fn metrics_image_features(dataset_name: &str, args: &Args) -> String {
     if dataset_name.starts_with("image") {
         args.image_features.as_str().to_string()
+    } else if dataset_name == "embedding-csv" {
+        "external-embedding".to_string()
     } else {
         "none".to_string()
     }

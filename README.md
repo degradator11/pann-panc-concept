@@ -205,6 +205,36 @@ it in the JSON file, and `eval-*` / `predict-*` reuse the saved mode.
 useful for cleaner datasets with stable backgrounds and falls back to
 center-crop when no reliable foreground box is found.
 
+## External Embeddings
+
+For pretrained image embeddings, generate vectors outside this crate with your
+preferred model/runtime, then save a CSV with a `label` column and numeric
+feature columns. A `path`, `image`, `image_path`, or `file` column is allowed
+and ignored by the vector loader.
+
+```csv
+path,label,e0,e1,e2
+cat-001.jpg,Cat,0.12,-0.04,0.88
+dog-001.jpg,Dog,0.51,0.33,-0.10
+```
+
+Run the same PANN/PANC/baseline benchmark logic on those vectors:
+
+```powershell
+cargo run --release --bin research-bench -- pann-embedding-csv --data C:\datasets\embeddings-train.csv --eval-data C:\datasets\embeddings-eval.csv --epochs 12 --intervals 12 --format json
+cargo run --release --bin research-bench -- panc-embedding-csv --data C:\datasets\embeddings-train.csv --eval-data C:\datasets\embeddings-eval.csv --format json
+cargo run --release --bin research-bench -- centroid-embedding-csv --data C:\datasets\embeddings-train.csv --eval-data C:\datasets\embeddings-eval.csv --format json
+```
+
+The repo includes tiny smoke-test fixtures:
+
+```powershell
+cargo run --bin research-bench -- centroid-embedding-csv --data data\embedding_tiny_train.csv --eval-data data\embedding_tiny_eval.csv --format json
+```
+
+This path is intentionally separate from the public-source classical image
+features. The repo does not bundle or download pretrained models.
+
 ## Real Image Datasets
 
 The image-folder benchmark works with any classification dataset arranged as

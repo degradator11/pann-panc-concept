@@ -46,6 +46,74 @@ pub fn load_iris(path: Option<&str>) -> Result<Dataset, Box<dyn Error>> {
     })
 }
 
+pub fn load_embedding_csv(path: &str) -> Result<Dataset, Box<dyn Error>> {
+    let mut rdr = csv::Reader::from_path(path)?;
+    let headers = rdr.headers()?.clone();
+    let label_index = headers
+        .iter()
+        .position(|header| {
+            matches!(
+                header.trim().to_ascii_lowercase().as_str(),
+                "label" | "class" | "class_name" | "target"
+            )
+        })
+        .ok_or("embedding CSV needs a label, class, class_name, or target column")?;
+    let path_index = headers.iter().position(|header| {
+        matches!(
+            header.trim().to_ascii_lowercase().as_str(),
+            "path" | "image" | "image_path" | "file"
+        )
+    });
+    let feature_indexes = headers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, _)| {
+            if index == label_index || Some(index) == path_index {
+                None
+            } else {
+                Some(index)
+            }
+        })
+        .collect::<Vec<_>>();
+    if feature_indexes.is_empty() {
+        return Err("embedding CSV needs at least one feature column".into());
+    }
+
+    let mut samples = Vec::new();
+    let mut labels = Vec::new();
+    let mut class_to_label = HashMap::<String, usize>::new();
+    let mut class_names = Vec::<String>::new();
+
+    for record in rdr.records() {
+        let record = record?;
+        let sample = feature_indexes
+            .iter()
+            .map(|index| record[*index].parse::<f64>())
+            .collect::<Result<Vec<_>, _>>()?;
+        let class_name = record[label_index].to_string();
+        let label = if let Some(label) = class_to_label.get(&class_name) {
+            *label
+        } else {
+            let label = class_names.len();
+            class_to_label.insert(class_name.clone(), label);
+            class_names.push(class_name);
+            label
+        };
+        samples.push(sample);
+        labels.push(label);
+    }
+
+    if samples.is_empty() {
+        return Err("embedding CSV contains no rows".into());
+    }
+
+    Ok(Dataset {
+        samples,
+        labels,
+        class_names,
+    })
+}
+
 pub fn synthetic_dataset(seed: u64) -> Dataset {
     let centers: [[f64; 2]; 3] = [[0.15, 0.15], [0.85, 0.2], [0.5, 0.85]];
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -65,5 +133,35 @@ pub fn synthetic_dataset(seed: u64) -> Dataset {
         samples,
         labels,
         class_names: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn embedding_csv_loader_reads_labels_and_features() {
+        let path = std::env::temp_dir().join(format!(
+            "progress_ai_embeddings_{}_{}.csv",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(
+            &path,
+            "path,label,e0,e1\ncat-1.jpg,Cat,0.1,0.2\ndog-1.jpg,Dog,0.8,0.7\n",
+        )
+        .unwrap();
+
+        let dataset = load_embedding_csv(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(dataset.samples, vec![vec![0.1, 0.2], vec![0.8, 0.7]]);
+        assert_eq!(dataset.labels, vec![0, 1]);
+        assert_eq!(dataset.class_names, vec!["Cat", "Dog"]);
+        fs::remove_file(path).unwrap();
     }
 }

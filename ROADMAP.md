@@ -13,6 +13,7 @@ The prototype can:
 - train and evaluate PANN-like models on vector and image-folder datasets
 - run PANC-like analogue comparator benchmarks
 - run a nearest-centroid Euclidean baseline for conventional comparison
+- load external embedding CSVs for PANN/PANC/baseline benchmarks
 - load CSV/vector data and class-folder image datasets
 - use deterministic train/test splits
 - use separate image train/eval folders through `--eval-data`
@@ -45,6 +46,7 @@ not artifact persistence or simply running more epochs.
 - Nearest-centroid baseline model for conventional benchmark comparisons
 - Preprocessing utilities for scaling, clipping, one-hot labels, and splits
 - `research-bench` CLI for Iris, synthetic data, and image folders
+- External embedding CSV benchmark commands for precomputed pretrained vectors
 - Small Iris CSV committed locally
 - Image-folder pipeline for PNG/JPEG datasets
 - Corrupt image skip behavior for folder benchmarks
@@ -425,9 +427,11 @@ Classical image features to try before pretrained embeddings:
 
 Optional later feature path:
 
-- pretrained image embeddings as input vectors for PANN/PANC
+- pretrained image embeddings as input vectors for PANN/PANC: implemented as
+  external CSV commands, `pann-embedding-csv`, `panc-embedding-csv`, and
+  `centroid-embedding-csv`
 - keep this optional and clearly separate from the public-source classical
-  reconstruction
+  reconstruction: the repo does not bundle or download pretrained models
 - compare against a small conventional baseline so we know whether the
   bottleneck is PANN/PANC or the feature vector itself: implemented as
   `centroid-*` commands and `--matrix-models centroid`

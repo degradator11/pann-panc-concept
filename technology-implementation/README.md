@@ -88,6 +88,13 @@ For a conventional comparison point, `centroid-image-folder` and
 same vectors. This is useful for checking whether PANN/PANC are adding value
 beyond the handcrafted image representation itself.
 
+Pretrained image embeddings are supported as an external-vector path rather
+than a bundled model runtime. Generate embeddings with another tool, save a CSV
+with a `label` column and numeric feature columns, then run
+`pann-embedding-csv`, `panc-embedding-csv`, or `centroid-embedding-csv`. This
+keeps pretrained embeddings separate from the public-source classical feature
+reconstruction.
+
 Artifact evaluation can also write a static debug report with `--debug-out`.
 The report includes `index.html`, prediction CSV/JSON files, per-class and
 confusion CSVs, processed image steps, scaled feature vectors, and per-sample
