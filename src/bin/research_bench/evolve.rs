@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::thread;
 use std::time::Instant;
 
 use progress_ai::evolution::{
@@ -38,6 +39,10 @@ pub fn run_evolve_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dy
         .first()
         .map(|variant| variant.class_names.clone())
         .ok_or("evolution search space produced no image variants")?;
+    eprintln!(
+        "evolution: scoring population={} generations={} threads={}",
+        config.population_size, config.generations, config.threads
+    );
 
     let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
     let mut population = (0..config.population_size)
@@ -46,13 +51,32 @@ pub fn run_evolve_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dy
 
     let mut rows = Vec::new();
     let mut final_scored = Vec::new();
+    let live_history_path = args
+        .out_path
+        .as_deref()
+        .map(|out_path| sibling_with_suffix(out_path, "history.csv"));
     for generation in 0..config.generations {
         let mut scored = score_population(&population, config.threads, &variants, args);
         sort_scored(&mut scored);
         let best = scored
             .first()
             .ok_or("evolution produced an empty scored population")?;
-        rows.push(evaluate_generation_row(generation, best, &variants)?);
+        let row = evaluate_generation_row(generation, best, &variants)?;
+        eprintln!(
+            "evolution: generation {}/{} best validation={:.4} fitness={:.4} {} {} size={} k={}",
+            generation + 1,
+            config.generations,
+            row.validation_accuracy,
+            row.best_fitness,
+            row.image_features,
+            row.image_resize,
+            row.image_size,
+            row.top_k
+        );
+        rows.push(row);
+        if let Some(history_path) = &live_history_path {
+            save_history(history_path, &rows)?;
+        }
 
         if generation + 1 == config.generations {
             final_scored = scored;
@@ -95,13 +119,7 @@ pub fn run_evolve_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dy
             },
         )?;
         let history = sibling_with_suffix(out_path, "history.csv");
-        if let Some(parent) = history.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            fs::create_dir_all(parent)?;
-        }
-        let file = fs::File::create(&history)?;
-        write_evolution_history_csv(file, &rows)?;
+        save_history(&history, &rows)?;
         history_path = Some(history.to_string_lossy().to_string());
     }
 
@@ -293,29 +311,119 @@ fn load_variants(
     space: &PancGenomeSpace,
     args: &Args,
 ) -> Result<Vec<VariantData>, Box<dyn Error>> {
-    let mut variants = Vec::new();
+    let specs = variant_specs(space);
+    let spec_count = specs.len();
+    let thread_count = worker_threads(args.evolution_threads, spec_count);
+    eprintln!(
+        "evolution: precomputing {} image variants with {} loader threads",
+        spec_count, thread_count
+    );
+    let chunk_size = spec_count.div_ceil(thread_count);
+
+    let mut loaded = thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in specs.chunks(chunk_size) {
+            handles.push(scope.spawn(move || {
+                chunk
+                    .iter()
+                    .map(|spec| {
+                        load_variant_spec(*spec, spec_count, data_path, eval_path, args)
+                            .map(|variant| (spec.index, variant))
+                            .map_err(|error| format!("{error}"))
+                    })
+                    .collect::<Vec<_>>()
+            }));
+        }
+
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("variant loader worker panicked"))
+            .collect::<Vec<_>>()
+    });
+
+    loaded.sort_by_key(|result| match result {
+        Ok((index, _)) => *index,
+        Err(_) => usize::MAX,
+    });
+
+    let mut variants = Vec::with_capacity(spec_count);
+    for result in loaded {
+        variants.push(result.map(|(_, variant)| variant)?);
+    }
+    Ok(variants)
+}
+
+fn variant_specs(space: &PancGenomeSpace) -> Vec<VariantSpec> {
+    let mut specs = Vec::new();
     for image_size in &space.image_sizes {
         for feature_mode in &space.feature_modes {
             for resize_mode in &space.resize_modes {
-                let image_config = ImageVectorConfig::new(*image_size, *image_size)
-                    .with_feature_mode(*feature_mode)
-                    .with_resize_mode(*resize_mode);
-                let dataset = load_image_folder(data_path, image_config)?;
-                let eval_dataset = eval_path
-                    .map(|path| load_image_folder(path, image_config))
-                    .transpose()?;
-                variants.push(prepare_variant(
-                    *image_size,
-                    *feature_mode,
-                    *resize_mode,
-                    dataset,
-                    eval_dataset,
-                    args,
-                )?);
+                specs.push(VariantSpec {
+                    index: specs.len(),
+                    image_size: *image_size,
+                    feature_mode: *feature_mode,
+                    resize_mode: *resize_mode,
+                });
             }
         }
     }
-    Ok(variants)
+    specs
+}
+
+fn load_variant_spec(
+    spec: VariantSpec,
+    total: usize,
+    data_path: &str,
+    eval_path: Option<&str>,
+    args: &Args,
+) -> Result<VariantData, Box<dyn Error>> {
+    eprintln!(
+        "evolution: loading variant {}/{} size={} features={} resize={}",
+        spec.index + 1,
+        total,
+        spec.image_size,
+        spec.feature_mode.as_str(),
+        spec.resize_mode.as_str()
+    );
+    let image_config = ImageVectorConfig::new(spec.image_size, spec.image_size)
+        .with_feature_mode(spec.feature_mode)
+        .with_resize_mode(spec.resize_mode);
+    let dataset = load_image_folder(data_path, image_config)?;
+    let eval_dataset = eval_path
+        .map(|path| load_image_folder(path, image_config))
+        .transpose()?;
+    let variant = prepare_variant(
+        spec.image_size,
+        spec.feature_mode,
+        spec.resize_mode,
+        dataset,
+        eval_dataset,
+        args,
+    )?;
+    eprintln!(
+        "evolution: loaded variant {}/{} size={} features={} resize={}",
+        spec.index + 1,
+        total,
+        spec.image_size,
+        spec.feature_mode.as_str(),
+        spec.resize_mode.as_str()
+    );
+    Ok(variant)
+}
+
+fn worker_threads(requested: usize, job_count: usize) -> usize {
+    if job_count == 0 {
+        return 1;
+    }
+    let auto_threads = thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
+    let requested = if requested == 0 {
+        auto_threads
+    } else {
+        requested
+    };
+    requested.clamp(1, job_count)
 }
 
 fn prepare_variant(
@@ -513,6 +621,21 @@ fn save_evolved_artifact(
     Ok(())
 }
 
+fn save_history(
+    path: impl AsRef<Path>,
+    rows: &[EvolutionGenerationRow],
+) -> Result<(), Box<dyn Error>> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let file = fs::File::create(path)?;
+    write_evolution_history_csv(file, rows)?;
+    Ok(())
+}
+
 fn sibling_with_suffix(path: impl AsRef<Path>, suffix: &str) -> PathBuf {
     let path = path.as_ref();
     let mut name = path
@@ -540,6 +663,14 @@ struct VariantData {
     validation_labels: Vec<usize>,
     eval_samples: Option<Vec<Vec<f64>>>,
     eval_labels: Option<Vec<usize>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct VariantSpec {
+    index: usize,
+    image_size: u32,
+    feature_mode: ImageFeatureMode,
+    resize_mode: ImageResizeMode,
 }
 
 #[derive(Debug, Clone, Copy)]
