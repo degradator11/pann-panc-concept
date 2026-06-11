@@ -89,6 +89,11 @@ For repeatable sweeps, use `image-matrix` to compare models, feature modes,
 image sizes, resize modes, intervals, and seeds while writing CSV or JSON
 reports under the ignored `reports/` directory.
 
+Matrix reports now include the same class-level questions we kept asking by
+hand: per-class accuracy, confusion matrix, worst class, most common confusion,
+and train-vs-eval overfit gap. CSV matrix runs also write a sibling
+`*.summary.csv` file with pooled class accuracy and best-seed summaries.
+
 The public Progress tests page reports target MSE, epoch/error, and training
 time. The prototype mirrors that reporting style with `pann-learning-curve`,
 which emits per-epoch MSE before/after training, train accuracy, test accuracy,

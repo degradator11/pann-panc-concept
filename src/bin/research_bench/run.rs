@@ -11,8 +11,8 @@ use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 
 use super::datasets::{load_iris, synthetic_dataset};
 use super::{
-    Args, BenchMetrics, CommandOutput, artifact_commands, image_config, learning_curve, matrix,
-    required_data_path,
+    Args, BenchMetrics, CommandOutput, artifact_commands, classification_metrics, image_config,
+    learning_curve, matrix, required_data_path,
 };
 
 pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -91,8 +91,15 @@ pub(super) fn run_pann(
     let train_ms = train_start.elapsed().as_millis();
 
     let inference_start = Instant::now();
-    let train_accuracy = model.accuracy(&train_samples, &split.train_labels)?;
-    let test_accuracy = model.accuracy(&test_samples, &split.test_labels)?;
+    let train_predictions = pann_predictions(&model, &train_samples)?;
+    let test_predictions = pann_predictions(&model, &test_samples)?;
+    let train_diagnostics = classification_metrics(
+        &split.train_labels,
+        &train_predictions,
+        &dataset.class_names,
+    );
+    let test_diagnostics =
+        classification_metrics(&split.test_labels, &test_predictions, &dataset.class_names);
     let inference_ms = inference_start.elapsed().as_millis();
 
     Ok(BenchMetrics {
@@ -100,8 +107,8 @@ pub(super) fn run_pann(
         dataset: dataset_name.to_string(),
         image_features: metrics_image_features(dataset_name, args),
         image_resize: metrics_image_resize(dataset_name, args),
-        train_accuracy,
-        test_accuracy,
+        train_accuracy: train_diagnostics.accuracy,
+        test_accuracy: test_diagnostics.accuracy,
         train_ms,
         inference_ms,
         memory_bytes: model.memory_bytes_estimate(),
@@ -109,6 +116,8 @@ pub(super) fn run_pann(
         interval_count: args.intervals,
         distributor: "triangular".to_string(),
         correction_mode: "difference_least_squares".to_string(),
+        per_class_accuracy: test_diagnostics.per_class_accuracy,
+        confusion_matrix: test_diagnostics.confusion_matrix,
     })
 }
 
@@ -130,8 +139,15 @@ pub(super) fn run_panc(
     let train_ms = train_start.elapsed().as_millis();
 
     let inference_start = Instant::now();
-    let train_accuracy = panc_accuracy(&comparator, &train_samples, &split.train_labels, 3)?;
-    let test_accuracy = panc_accuracy(&comparator, &test_samples, &split.test_labels, 3)?;
+    let train_predictions = panc_predictions(&comparator, &train_samples, 3)?;
+    let test_predictions = panc_predictions(&comparator, &test_samples, 3)?;
+    let train_diagnostics = classification_metrics(
+        &split.train_labels,
+        &train_predictions,
+        &dataset.class_names,
+    );
+    let test_diagnostics =
+        classification_metrics(&split.test_labels, &test_predictions, &dataset.class_names);
     let inference_ms = inference_start.elapsed().as_millis();
 
     Ok(BenchMetrics {
@@ -139,8 +155,8 @@ pub(super) fn run_panc(
         dataset: dataset_name.to_string(),
         image_features: metrics_image_features(dataset_name, args),
         image_resize: metrics_image_resize(dataset_name, args),
-        train_accuracy,
-        test_accuracy,
+        train_accuracy: train_diagnostics.accuracy,
+        test_accuracy: test_diagnostics.accuracy,
         train_ms,
         inference_ms,
         memory_bytes: train_samples.len() * train_samples[0].len() * std::mem::size_of::<f64>(),
@@ -148,6 +164,8 @@ pub(super) fn run_panc(
         interval_count: 0,
         distributor: "none".to_string(),
         correction_mode: "top_k_euclidean_vote".to_string(),
+        per_class_accuracy: test_diagnostics.per_class_accuracy,
+        confusion_matrix: test_diagnostics.confusion_matrix,
     })
 }
 
@@ -225,21 +243,24 @@ fn metrics_image_resize(dataset_name: &str, args: &Args) -> String {
     }
 }
 
-fn panc_accuracy(
+fn pann_predictions(model: &PannModel, samples: &[Vec<f64>]) -> Result<Vec<usize>, Box<dyn Error>> {
+    samples
+        .iter()
+        .map(|sample| model.predict(sample).map_err(Into::into))
+        .collect()
+}
+
+fn panc_predictions(
     comparator: &PancComparator<usize>,
     samples: &[Vec<f64>],
-    labels: &[usize],
     k: usize,
-) -> Result<f64, Box<dyn Error>> {
-    if samples.is_empty() {
-        return Ok(0.0);
-    }
-
-    let mut correct = 0usize;
-    for (sample, label) in samples.iter().zip(labels) {
-        if comparator.predict_label(sample, k)? == Some(*label) {
-            correct += 1;
-        }
-    }
-    Ok(correct as f64 / samples.len() as f64)
+) -> Result<Vec<usize>, Box<dyn Error>> {
+    samples
+        .iter()
+        .map(|sample| {
+            comparator
+                .predict_label(sample, k)?
+                .ok_or_else(|| "PANC comparator returned no prediction".into())
+        })
+        .collect()
 }

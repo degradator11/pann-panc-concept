@@ -337,10 +337,27 @@ Notes:
 - PANC-like comparison ignores interval count and runs once per
   model/feature/image-size/seed.
 - `--matrix-resize-modes` adds resize/normalization modes to the sweep.
-- CSV output contains per-run rows.
+- CSV output contains per-run rows. When `--out reports\name.csv` is used, the
+  command also writes `reports\name.summary.csv`.
 - JSON output contains per-run rows plus grouped summaries with mean/min/max
   accuracy.
+- Matrix rows include per-class accuracy, confusion matrix, worst class, most
+  common confusion, and train-vs-eval overfit gap.
+- Matrix summaries include pooled per-class accuracy, worst mean class, best
+  seed, best test accuracy, and mean overfit gap.
 - Generated `reports/` files are ignored by git.
+
+Example summary CSV columns:
+
+```text
+mean_test_accuracy
+best_seed
+best_test_accuracy
+mean_overfit_gap
+pooled_test_per_class_accuracy
+worst_mean_class_name
+worst_mean_class_accuracy
+```
 
 ### Learning Curve Reports
 

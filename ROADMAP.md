@@ -120,12 +120,13 @@ Latest feature-quality result:
 | Model | Features | Image Size | Seeds | Mean Eval Accuracy | Best Eval Accuracy |
 | --- | --- | ---: | --- | ---: | ---: |
 | PANN | combined | 64 | 1,2,3 | 62.4% | 62.8% |
-| PANN | rich | 64 | 1,2,3 | 64.9% | 65.9% |
+| PANN | rich, stretch resize | 64 | 1,2,3 | 64.9% | 65.9% |
 | PANC-like | rich | 64 | 1 | 59.6% | 59.6% |
 
-Interpretation: `rich` features and 64px vectorization produce the first
-repeatable movement beyond the old 60.7% Cats/Dogs ceiling. Accuracy is still
-not production-grade, but this is a real classical-feature improvement.
+Interpretation: `rich` features and 64px vectorization produced the first
+repeatable movement beyond the old 60.7% Cats/Dogs ceiling. The later
+normalization matrix improved the best short-dataset run further to 68.7% with
+center-crop, but accuracy is still not production-grade.
 
 Latest learning-curve result, modeled after the public Progress tests page's
 target-MSE/epoch/error/time reporting:
@@ -259,6 +260,12 @@ Implemented in the first pass:
 - artifact eval reports confusion matrix output
 - artifact eval reports a short misclassified-example list with path, expected label,
   predicted label, and confidence/margin where available
+- `image-matrix` rows now include per-class accuracy, confusion matrix, worst
+  class, most common confusion, and train-vs-eval overfit gap
+- `image-matrix` grouped summaries now include pooled per-class accuracy,
+  worst mean class, best seed, best test accuracy, and mean overfit gap
+- CSV matrix output writes a sibling `*.summary.csv` file beside the per-run
+  row CSV
 - artifact eval can write static debug reports:
   - `index.html`
   - `config.json`
@@ -280,11 +287,6 @@ Implemented in the first pass:
 
 Remaining planned work:
 
-- add per-class accuracy output to matrix summaries, or add a separate
-  diagnostics report file for matrix runs
-- compare `rich` at 64px across interval counts, seeds, and resize modes
-- run the normalization matrix on the Cats/Dogs short dataset and record the
-  result snapshot
 - optionally add an interactive UI later if the static report is still not
   enough
 
@@ -297,13 +299,30 @@ Success criteria:
 - report answers which failure modes are most suspicious without manually
   opening every sample folder
 - resize/crop mode gives a repeatable gain, or is documented as not helpful
-- best Cats/Dogs eval accuracy improves beyond the current 65.9% best run
+- best Cats/Dogs eval accuracy improves beyond the old 65.9% feature-only best
+  run
 
-Suggested first experiment after implementation:
+Normalization matrix command:
 
 ```powershell
 cargo run --release --bin research-bench -- image-matrix --data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_short --eval-data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_short\Eval --out reports\cats-dogs-normalization-matrix.csv --format csv --matrix-models pann --matrix-features rich --matrix-image-sizes 64 --matrix-intervals 6,8,12 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
 ```
+
+Latest normalization matrix on the short Cats/Dogs train/eval folders:
+
+| Resize | Intervals | Runs | Mean Eval Accuracy | Best Eval Accuracy | Worst Mean Class |
+| --- | ---: | ---: | ---: | ---: | --- |
+| center-crop | 12 | 3 | 68.2% | 68.6% | Dog, 65.1% |
+| center-crop | 8 | 3 | 67.6% | 68.7% | Dog, 57.4% |
+| center-crop | 6 | 3 | 65.9% | 66.2% | Dog, 64.1% |
+| stretch | 12 | 3 | 65.9% | 66.6% | Cat, 65.8% |
+| letterbox | 12 | 3 | 65.4% | 65.9% | Dog, 61.7% |
+
+Interpretation: center-crop is the first repeatable normalization gain on the
+short Cats/Dogs set, with the strongest mean at 12 intervals and best single
+run at seed 3 / 8 intervals. It still leaves Dogs as the weaker class in most
+center-crop settings, so the next quality lever is feature extraction or class
+calibration, not more epochs alone.
 
 ## Benchmark Roadmap
 
@@ -311,8 +330,6 @@ Planned benchmark improvements:
 
 - compare PANN correction modes
 - add optional top-N report sorting
-- add train-vs-eval overfit summary to matrix reports
-- add best-row summary for matrix CSV/JSON runs
 - add debug-report support to in-memory folder benchmarks, not only artifact
   evaluation
 

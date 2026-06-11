@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, load_image_folder};
 
 use super::run::{run_panc, run_pann};
 use super::{
     Args, CommandOutput, MatrixModel, MatrixReport, MatrixRow, MatrixSummary, OutputFormat,
-    image_config, required_data_path,
+    PerClassAccuracy, image_config, most_common_confusion, required_data_path, worst_class,
+    write_matrix_rows_csv, write_matrix_summaries_csv,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -75,12 +76,13 @@ pub fn run_image_matrix(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
     let mut report = MatrixReport {
         dataset: "image-folder".to_string(),
         report_path: args.out_path.clone(),
+        summary_report_path: None,
         summaries: summarize_rows(&rows),
         rows,
     };
 
     if let Some(out_path) = &args.out_path {
-        save_matrix_report(out_path, &report, args.format)?;
+        report.summary_report_path = save_matrix_report(out_path, &report, args.format)?;
         report.report_path = Some(out_path.clone());
     }
 
@@ -106,6 +108,16 @@ fn variant_args(
 }
 
 fn row_from_metrics(metrics: &super::BenchMetrics, image_size: u32, seed: u64) -> MatrixRow {
+    let class_names = metrics
+        .per_class_accuracy
+        .iter()
+        .map(|class| class.class_name.clone())
+        .collect::<Vec<_>>();
+    let worst = worst_class(&metrics.per_class_accuracy);
+    let (most_common_confusion, most_common_confusion_count) =
+        most_common_confusion(&metrics.confusion_matrix, &class_names)
+            .unwrap_or_else(|| ("none".to_string(), 0));
+
     MatrixRow {
         model: metrics.model.clone(),
         image_features: metrics.image_features.clone(),
@@ -116,6 +128,15 @@ fn row_from_metrics(metrics: &super::BenchMetrics, image_size: u32, seed: u64) -
         interval_count: metrics.interval_count,
         train_accuracy: metrics.train_accuracy,
         test_accuracy: metrics.test_accuracy,
+        overfit_gap: metrics.train_accuracy - metrics.test_accuracy,
+        test_per_class_accuracy: metrics.per_class_accuracy.clone(),
+        test_confusion_matrix: metrics.confusion_matrix.clone(),
+        worst_class_name: worst
+            .map(|class| class.class_name.clone())
+            .unwrap_or_else(|| "none".to_string()),
+        worst_class_accuracy: worst.map_or(0.0, |class| class.accuracy),
+        most_common_confusion,
+        most_common_confusion_count,
         train_ms: metrics.train_ms,
         inference_ms: metrics.inference_ms,
         memory_bytes: metrics.memory_bytes,
@@ -172,6 +193,18 @@ fn summary_from_group(key: SummaryKey, rows: &[&MatrixRow]) -> MatrixSummary {
         .iter()
         .map(|row| row.memory_bytes as f64)
         .collect::<Vec<_>>();
+    let overfit_gaps = rows.iter().map(|row| row.overfit_gap).collect::<Vec<_>>();
+    let best = rows
+        .iter()
+        .copied()
+        .max_by(|left, right| left.test_accuracy.total_cmp(&right.test_accuracy))
+        .expect("matrix summaries are only built from non-empty groups");
+    let pooled_test_per_class_accuracy = pooled_per_class_accuracy(rows);
+    let worst_mean = worst_class(&pooled_test_per_class_accuracy);
+    let worst_mean_class_name = worst_mean
+        .map(|class| class.class_name.clone())
+        .unwrap_or_else(|| "none".to_string());
+    let worst_mean_class_accuracy = worst_mean.map_or(0.0, |class| class.accuracy);
 
     MatrixSummary {
         model: key.model,
@@ -186,6 +219,13 @@ fn summary_from_group(key: SummaryKey, rows: &[&MatrixRow]) -> MatrixSummary {
             .iter()
             .copied()
             .fold(f64::NEG_INFINITY, f64::max),
+        best_seed: best.seed,
+        best_test_accuracy: best.test_accuracy,
+        best_train_accuracy: best.train_accuracy,
+        mean_overfit_gap: mean(&overfit_gaps),
+        pooled_test_per_class_accuracy,
+        worst_mean_class_name,
+        worst_mean_class_accuracy,
         mean_train_accuracy: mean(&train_values),
         mean_train_ms: mean(&train_ms),
         mean_inference_ms: mean(&inference_ms),
@@ -197,7 +237,7 @@ fn save_matrix_report(
     out_path: &str,
     report: &MatrixReport,
     format: OutputFormat,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Option<String>, Box<dyn Error>> {
     let path = Path::new(out_path);
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
@@ -208,14 +248,57 @@ fn save_matrix_report(
     match format {
         OutputFormat::Json => fs::write(path, serde_json::to_string_pretty(report)?)?,
         OutputFormat::Csv => {
-            let mut writer = csv::Writer::from_path(path)?;
-            for row in &report.rows {
-                writer.serialize(row)?;
-            }
-            writer.flush()?;
+            let rows_file = fs::File::create(path)?;
+            write_matrix_rows_csv(rows_file, &report.rows)?;
+            let summary_path = summary_csv_path(path);
+            let summary_file = fs::File::create(&summary_path)?;
+            write_matrix_summaries_csv(summary_file, &report.summaries)?;
+            return Ok(Some(summary_path.display().to_string()));
         }
     }
-    Ok(())
+    Ok(None)
+}
+
+fn pooled_per_class_accuracy(rows: &[&MatrixRow]) -> Vec<PerClassAccuracy> {
+    let Some(first) = rows.first() else {
+        return Vec::new();
+    };
+
+    first
+        .test_per_class_accuracy
+        .iter()
+        .map(|class| {
+            let mut correct = 0usize;
+            let mut total = 0usize;
+            for row in rows {
+                if let Some(value) = row
+                    .test_per_class_accuracy
+                    .iter()
+                    .find(|value| value.class_index == class.class_index)
+                {
+                    correct += value.correct;
+                    total += value.total;
+                }
+            }
+            PerClassAccuracy {
+                class_index: class.class_index,
+                class_name: class.class_name.clone(),
+                correct,
+                total,
+                accuracy: if total == 0 {
+                    0.0
+                } else {
+                    correct as f64 / total as f64
+                },
+            }
+        })
+        .collect()
+}
+
+fn summary_csv_path(path: &Path) -> PathBuf {
+    let mut summary_path = path.to_path_buf();
+    summary_path.set_extension("summary.csv");
+    summary_path
 }
 
 fn matrix_models(args: &Args) -> Vec<MatrixModel> {
