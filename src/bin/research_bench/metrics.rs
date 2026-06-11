@@ -13,6 +13,7 @@ pub enum CommandOutput {
     Prediction(PredictionOutput),
     Matrix(MatrixReport),
     LearningCurve(LearningCurveReport),
+    Evolution(EvolutionReport),
 }
 
 #[derive(Debug, Serialize)]
@@ -202,6 +203,56 @@ pub struct LearningCurveRow {
     pub elapsed_ms: u128,
 }
 
+#[derive(Debug, Serialize)]
+pub struct EvolutionReport {
+    pub model: String,
+    pub dataset: String,
+    pub artifact_path: Option<String>,
+    pub history_path: Option<String>,
+    pub seed: u64,
+    pub population_size: usize,
+    pub generations: usize,
+    pub elite_count: usize,
+    pub mutation_rate: f64,
+    pub validation_ratio: f64,
+    pub threads: usize,
+    pub hardware_note: String,
+    pub best_genome: EvolvedPancGenomeReport,
+    pub best_fitness: f64,
+    pub validation_accuracy: f64,
+    pub eval_accuracy: Option<f64>,
+    pub eval_per_class_accuracy: Vec<PerClassAccuracy>,
+    pub eval_confusion_matrix: Vec<ConfusionRow>,
+    pub rows: Vec<EvolutionGenerationRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EvolvedPancGenomeReport {
+    pub image_size: u32,
+    pub image_features: String,
+    pub image_resize: String,
+    pub threshold: f64,
+    pub similarity: String,
+    pub jaccard_weight: f64,
+    pub top_k: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EvolutionGenerationRow {
+    pub generation: usize,
+    pub best_fitness: f64,
+    pub validation_accuracy: f64,
+    pub validation_ms: u128,
+    pub memory_bytes: usize,
+    pub image_size: u32,
+    pub image_features: String,
+    pub image_resize: String,
+    pub threshold: f64,
+    pub similarity: String,
+    pub jaccard_weight: f64,
+    pub top_k: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClassificationMetrics {
     pub accuracy: f64,
@@ -366,6 +417,12 @@ pub fn write_output(output: &CommandOutput, format: OutputFormat) -> Result<(), 
             }
             writer.flush()?;
         }
+        (CommandOutput::Evolution(report), OutputFormat::Json) => {
+            println!("{}", serde_json::to_string_pretty(report)?);
+        }
+        (CommandOutput::Evolution(report), OutputFormat::Csv) => {
+            write_evolution_history_csv(std::io::stdout(), &report.rows)?;
+        }
     }
     Ok(())
 }
@@ -389,6 +446,18 @@ pub fn write_matrix_summaries_csv<W: Write>(
     let mut writer = csv::Writer::from_writer(writer);
     for summary in summaries {
         writer.serialize(MatrixSummaryCsv::from(summary))?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
+pub fn write_evolution_history_csv<W: Write>(
+    writer: W,
+    rows: &[EvolutionGenerationRow],
+) -> Result<(), Box<dyn Error>> {
+    let mut writer = csv::Writer::from_writer(writer);
+    for row in rows {
+        writer.serialize(row)?;
     }
     writer.flush()?;
     Ok(())

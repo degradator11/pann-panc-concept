@@ -6,13 +6,14 @@ use std::str::FromStr;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::preprocess::Dataset;
 
 mod features;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImageVectorConfig {
     pub width: u32,
     pub height: u32,
@@ -63,7 +64,7 @@ impl ImageVectorConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImageFeatureMode {
     Pixels,
     ColorHistogram,
@@ -123,7 +124,7 @@ impl FromStr for ImageFeatureMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImageResizeMode {
     Stretch,
     CenterCrop,

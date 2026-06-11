@@ -13,7 +13,7 @@ use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 use super::datasets::{load_embedding_csv, load_iris, synthetic_dataset};
 use super::{
     Args, BenchMetrics, CommandOutput, artifact_commands, classification_metrics,
-    correction_mode_name, folder_commands, image_config, learning_curve, matrix,
+    correction_mode_name, evolve, folder_commands, image_config, learning_curve, matrix,
 };
 
 pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -26,6 +26,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         "predict-panc" => artifact_commands::predict_panc(args),
         "image-matrix" => matrix::run_image_matrix(args),
         "pann-learning-curve" => learning_curve::run_pann_learning_curve(args),
+        "evolve-panc-image-folder" => evolve::run_evolve_panc_image_folder(args),
         "pann-iris" => run_pann(load_iris(args.data_path.as_deref())?, "iris", args)
             .map(CommandOutput::Metrics),
         "pann-synthetic" => {
@@ -87,7 +88,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         command => Err(format!(
-            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, pann-embedding-csv, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, panc-embedding-csv, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, centroid-embedding-csv, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, or pann-learning-curve"
+            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, pann-embedding-csv, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, panc-embedding-csv, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, centroid-embedding-csv, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, pann-learning-curve, or evolve-panc-image-folder"
         )
         .into()),
     }

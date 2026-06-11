@@ -14,6 +14,7 @@ The prototype can:
 - run PANC-like analogue comparator benchmarks
 - run a nearest-centroid Euclidean baseline for conventional comparison
 - load external embedding CSVs for PANN/PANC/baseline benchmarks
+- run CPU-parallel genetic search for PANC-like binary comparator settings
 - load CSV/vector data and class-folder image datasets
 - use deterministic train/test splits
 - use separate image train/eval folders through `--eval-data`
@@ -67,6 +68,8 @@ not artifact persistence or simply running more epochs.
 - Image benchmark matrix command with CSV/JSON report output, including
   correction-mode sweeps for PANN
 - PANN learning-curve reports with epoch/MSE/accuracy/time rows
+- PANC-like genetic search command for binary threshold, similarity blend,
+  top-k, image size, feature mode, and resize-mode discovery
 - Image resize modes for stretch, center-crop, letterbox, and foreground-crop
   preprocessing
 - Artifact eval diagnostics with per-class accuracy, confusion matrix, and a
@@ -87,6 +90,8 @@ What is working:
   HOG-only, and the earlier combined feature vector.
 - Learning-curve reports now show whether PANN is actually reducing training
   error step by step.
+- `evolve-panc-image-folder` can now search for compact binary comparator
+  settings using a validation split and optional final eval folder.
 
 What is still weak:
 
@@ -97,9 +102,49 @@ What is still weak:
 - We do not yet know whether most failures come from Cat, Dog, corrupt/odd
   inputs, image framing, or weak visual descriptors.
 
-Decision: keep the next milestone focused on diagnostics and normalization.
-Only after we can see the failures clearly should we add heavier feature
-extractors or more model complexity.
+Decision: keep PANN and PANC claims separate. PANN follows public patent
+mechanics closely; PANC remains a PANC-like comparator baseline plus search
+tooling because public sources do not disclose the exact binary comparison
+format or similarity coefficient.
+
+## Latest PANC-Like Genetic Search Snapshot
+
+The first genetic-search implementation is in place as
+`evolve-panc-image-folder`.
+
+It searches:
+
+- image size
+- image feature mode
+- resize mode
+- binary threshold
+- Hamming/Jaccard similarity blend
+- top-k vote size
+
+It uses a training-folder validation split for search and reserves `--eval-data`
+for final reporting only.
+
+Smoke command:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_short --out reports\evolved-panc-smoke.json --population 4 --generations 2 --threads 4 --evolve-image-sizes 32 --evolve-features rich --evolve-resize-modes center-crop --evolve-top-k 1,3 --format json
+```
+
+Smoke result:
+
+| Setting | Value |
+| --- | --- |
+| Best validation accuracy | 67.5% |
+| Image size | 32 |
+| Features | rich |
+| Resize | center-crop |
+| Threshold | 0.1188 |
+| Similarity | Hamming/Jaccard blend |
+| Top-k | 3 |
+
+For the local Intel i9-14900 / 32-thread machine, larger searches should use
+`--threads 32`. The RTX 5090 is noted for future GPU work, but the current
+search is CPU-parallel only.
 
 ## Latest Cats/Dogs Snapshot
 

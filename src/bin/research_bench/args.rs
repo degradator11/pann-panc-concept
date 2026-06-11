@@ -37,6 +37,18 @@ pub struct Args {
     pub debug_limit: usize,
     pub debug_samples: DebugSamples,
     pub debug_neighbors: usize,
+    pub evolution_population: usize,
+    pub evolution_generations: usize,
+    pub evolution_elite_count: usize,
+    pub evolution_mutation_rate: f64,
+    pub evolution_validation_ratio: f64,
+    pub evolution_threads: usize,
+    pub evolution_feature_modes: Vec<ImageFeatureMode>,
+    pub evolution_image_sizes: Vec<u32>,
+    pub evolution_resize_modes: Vec<ImageResizeMode>,
+    pub evolution_top_k_values: Vec<usize>,
+    pub evolution_memory_penalty_per_mb: f64,
+    pub evolution_inference_penalty_per_ms: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +84,7 @@ impl DebugSamples {
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]",
     )?;
 
     let mut args = Args {
@@ -107,6 +119,18 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         debug_limit: 50,
         debug_samples: DebugSamples::Misclassified,
         debug_neighbors: 5,
+        evolution_population: 32,
+        evolution_generations: 20,
+        evolution_elite_count: 4,
+        evolution_mutation_rate: 0.2,
+        evolution_validation_ratio: 0.2,
+        evolution_threads: 0,
+        evolution_feature_modes: Vec::new(),
+        evolution_image_sizes: Vec::new(),
+        evolution_resize_modes: Vec::new(),
+        evolution_top_k_values: Vec::new(),
+        evolution_memory_penalty_per_mb: 0.0001,
+        evolution_inference_penalty_per_ms: 0.00001,
     };
 
     while let Some(flag) = raw.next() {
@@ -259,6 +283,72 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .next()
                     .ok_or("--debug-neighbors requires a value")?
                     .parse::<usize>()?;
+            }
+            "--population" => {
+                args.evolution_population = raw
+                    .next()
+                    .ok_or("--population requires a value")?
+                    .parse::<usize>()?;
+            }
+            "--generations" => {
+                args.evolution_generations = raw
+                    .next()
+                    .ok_or("--generations requires a value")?
+                    .parse::<usize>()?;
+            }
+            "--elite" | "--elite-count" => {
+                args.evolution_elite_count = raw
+                    .next()
+                    .ok_or("--elite-count requires a value")?
+                    .parse::<usize>()?;
+            }
+            "--mutation-rate" => {
+                args.evolution_mutation_rate = raw
+                    .next()
+                    .ok_or("--mutation-rate requires a value")?
+                    .parse::<f64>()?;
+            }
+            "--validation-ratio" => {
+                args.evolution_validation_ratio = raw
+                    .next()
+                    .ok_or("--validation-ratio requires a value")?
+                    .parse::<f64>()?;
+            }
+            "--threads" => {
+                args.evolution_threads = raw
+                    .next()
+                    .ok_or("--threads requires a value")?
+                    .parse::<usize>()?;
+            }
+            "--evolve-features" => {
+                args.evolution_feature_modes = parse_image_features_list(
+                    &raw.next().ok_or("--evolve-features requires a value")?,
+                )?;
+            }
+            "--evolve-image-sizes" => {
+                args.evolution_image_sizes =
+                    parse_number_list(&raw.next().ok_or("--evolve-image-sizes requires a value")?)?;
+            }
+            "--evolve-resize-modes" => {
+                args.evolution_resize_modes = parse_image_resize_modes_list(
+                    &raw.next().ok_or("--evolve-resize-modes requires a value")?,
+                )?;
+            }
+            "--evolve-top-k" => {
+                args.evolution_top_k_values =
+                    parse_number_list(&raw.next().ok_or("--evolve-top-k requires a value")?)?;
+            }
+            "--memory-penalty-per-mb" => {
+                args.evolution_memory_penalty_per_mb = raw
+                    .next()
+                    .ok_or("--memory-penalty-per-mb requires a value")?
+                    .parse::<f64>()?;
+            }
+            "--inference-penalty-per-ms" => {
+                args.evolution_inference_penalty_per_ms = raw
+                    .next()
+                    .ok_or("--inference-penalty-per-ms requires a value")?
+                    .parse::<f64>()?;
             }
             other => return Err(format!("unknown option {other}").into()),
         }

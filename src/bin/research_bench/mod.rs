@@ -3,6 +3,7 @@ mod artifact_commands;
 mod artifacts;
 mod datasets;
 mod debug_report;
+mod evolve;
 mod folder_commands;
 mod learning_curve;
 mod matrix;
@@ -19,9 +20,10 @@ pub use debug_report::{
 };
 pub use metrics::{
     ArtifactMetrics, BenchMetrics, ClassScore, CommandOutput, ConfusionRow, EvalMetrics,
-    LearningCurveReport, LearningCurveRow, MatrixReport, MatrixRow, MatrixSummary,
-    MisclassifiedExample, PerClassAccuracy, PredictionNeighbor, PredictionOutput,
-    classification_metrics, most_common_confusion, worst_class, write_matrix_rows_csv,
+    EvolutionGenerationRow, EvolutionReport, EvolvedPancGenomeReport, LearningCurveReport,
+    LearningCurveRow, MatrixReport, MatrixRow, MatrixSummary, MisclassifiedExample,
+    PerClassAccuracy, PredictionNeighbor, PredictionOutput, classification_metrics,
+    most_common_confusion, worst_class, write_evolution_history_csv, write_matrix_rows_csv,
     write_matrix_summaries_csv, write_output,
 };
 pub use run::run;

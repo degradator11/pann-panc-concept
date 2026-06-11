@@ -440,6 +440,52 @@ On the short Cats/Dogs dataset, the focused correction-mode smoke run found
 `ratio` fell to **53.9%**. Keep `difference-ls` as the default for image work
 until broader evidence says otherwise.
 
+### Genetic PANC-Like Search
+
+Public PANC material does not disclose the exact binary comparison format or
+similarity coefficient. The `evolve-panc-image-folder` command searches for a
+useful PANC-like binary comparator configuration instead of pretending those
+missing details are known.
+
+The search currently evolves:
+
+- image size
+- image feature mode
+- resize mode
+- binary threshold
+- Hamming/Jaccard similarity blend
+- top-k vote size
+
+It builds an analogue library from the training folder, scores genomes on a
+validation split from that same training folder, and uses `--eval-data` only for
+the final best-genome report.
+
+Small smoke run:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\datasets\cats-dogs\train --out reports\evolved-panc-smoke.json --population 8 --generations 4 --threads 8 --evolve-image-sizes 32 --evolve-features rich --evolve-resize-modes center-crop --evolve-top-k 1,3 --format json
+```
+
+Larger workstation run:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out models\evolved-panc-cats-dogs.json --population 64 --generations 50 --threads 32 --evolve-image-sizes 64,128 --evolve-features rich,rich-texture,rich-hog,rich-edge,rich-layout --evolve-resize-modes center-crop,foreground-crop --evolve-top-k 1,3,5,7 --format json
+```
+
+For the noted Intel i9-14900 workstation, `--threads 32` is appropriate. The
+current implementation is CPU-parallel; the NVIDIA RTX 5090 is not used yet.
+
+When `--out models\name.json` is provided, the command writes:
+
+```text
+models\name.json          best evolved genome and final metrics
+models\name.history.csv   best genome per generation
+```
+
+The generation history is the first thing to inspect. A useful run should show
+validation accuracy improving or stabilizing above random search, not merely a
+single lucky generation.
+
 ### Learning Curve Reports
 
 The public [Progress tests page](https://progress.ai/tests/) reports training
