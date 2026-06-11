@@ -7,6 +7,9 @@ This project does **not** claim to reproduce Progress, Inc.'s private software,
 benchmarks, or proprietary implementation. It implements benchmarkable,
 public-material-based models for experimentation.
 
+See [ROADMAP.md](ROADMAP.md) for current progress, experiment snapshots, and
+planned milestones.
+
 ## What PANN And PANC Mean
 
 - **PANN**: Progressive Artificial Neural Network. In this prototype, inputs are
