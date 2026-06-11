@@ -57,6 +57,7 @@ impl ImageVectorConfig {
             ImageFeatureMode::RichNormalized => features::RICH_NORMALIZED_LEN,
             ImageFeatureMode::RichHog => features::RICH_HOG_LEN,
             ImageFeatureMode::RichTexture => features::RICH_TEXTURE_LEN,
+            ImageFeatureMode::RichEdge => features::RICH_EDGE_LEN,
         }
     }
 }
@@ -72,6 +73,7 @@ pub enum ImageFeatureMode {
     RichNormalized,
     RichHog,
     RichTexture,
+    RichEdge,
 }
 
 impl ImageFeatureMode {
@@ -86,6 +88,7 @@ impl ImageFeatureMode {
             Self::RichNormalized => "rich-normalized",
             Self::RichHog => "rich-hog",
             Self::RichTexture => "rich-texture",
+            Self::RichEdge => "rich-edge",
         }
     }
 }
@@ -106,8 +109,9 @@ impl FromStr for ImageFeatureMode {
             }
             "rich-hog" | "rich_hog" | "rich-block-hog" | "rich-blockhog" => Ok(Self::RichHog),
             "rich-texture" | "rich_texture" | "rich-lbp" | "rich_lbp" => Ok(Self::RichTexture),
+            "rich-edge" | "rich_edges" | "rich-edge-density" | "rich_edge" => Ok(Self::RichEdge),
             other => Err(format!(
-                "invalid image feature mode {other:?}; expected pixels, color, hog, combined, rich, rich-spatial, rich-normalized, rich-hog, or rich-texture"
+                "invalid image feature mode {other:?}; expected pixels, color, hog, combined, rich, rich-spatial, rich-normalized, rich-hog, rich-texture, or rich-edge"
             )),
         }
     }
@@ -493,6 +497,15 @@ mod tests {
 
         assert_eq!(dataset.samples[0].len(), config.vector_len());
         assert_eq!(config.vector_len(), 1410);
+    }
+
+    #[test]
+    fn rich_edge_feature_mode_has_expected_length() {
+        let config = ImageVectorConfig::new(8, 8).with_feature_mode(ImageFeatureMode::RichEdge);
+        let dataset = synthetic_image_dataset(config, 1, 9).unwrap();
+
+        assert_eq!(dataset.samples[0].len(), config.vector_len());
+        assert_eq!(config.vector_len(), 1458);
     }
 
     #[test]

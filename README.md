@@ -183,6 +183,8 @@ at the cost of a larger vector. `--image-features rich-normalized` adds
 brightness-normalized RGB chromaticity moments on top of `rich-spatial`.
 `--image-features rich-hog` further adds block-normalized HOG descriptors.
 `--image-features rich-texture` adds a second-radius LBP texture descriptor.
+`--image-features rich-edge` adds per-region edge-density summaries on top of
+`rich-texture`.
 
 Resize modes control how non-square images become fixed-size vectors:
 
@@ -337,13 +339,13 @@ feature modes, image sizes, interval counts, and random seeds.
 Small Cats/Dogs matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox --epochs 12
 ```
 
 Larger matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
 ```
 
 Notes:

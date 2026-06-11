@@ -18,6 +18,7 @@ pub(super) const SPATIAL_STATS_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * 2;
 pub(super) const HOG_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HOG_BINS;
 pub(super) const HOG_BLOCK_LEN: usize = HOG_BLOCK_GRID * HOG_BLOCK_GRID * 4 * HOG_BINS;
 pub(super) const LBP_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * LBP_BINS;
+pub(super) const EDGE_DENSITY_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * 3;
 pub(super) const SPATIAL_HSV_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HSV_HISTOGRAM_LEN;
 pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN + HOG_LEN;
 pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
@@ -25,6 +26,7 @@ pub(super) const RICH_SPATIAL_LEN: usize = RICH_LEN + SPATIAL_HSV_LEN;
 pub(super) const RICH_NORMALIZED_LEN: usize = RICH_SPATIAL_LEN + NORMALIZED_COLOR_MOMENTS_LEN;
 pub(super) const RICH_HOG_LEN: usize = RICH_NORMALIZED_LEN + HOG_BLOCK_LEN;
 pub(super) const RICH_TEXTURE_LEN: usize = RICH_HOG_LEN + LBP_LEN;
+pub(super) const RICH_EDGE_LEN: usize = RICH_TEXTURE_LEN + EDGE_DENSITY_LEN;
 
 pub(super) struct ImageProcessingStep {
     pub name: &'static str,
@@ -59,7 +61,8 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
         | ImageFeatureMode::RichSpatial
         | ImageFeatureMode::RichNormalized
         | ImageFeatureMode::RichHog
-        | ImageFeatureMode::RichTexture => {
+        | ImageFeatureMode::RichTexture
+        | ImageFeatureMode::RichEdge => {
             let rgb = resized.to_rgb8();
             let gray_values = grayscale_pixels(&resized.to_luma8(), config.invert);
             let mut features = color_histogram(&rgb, config.invert);
@@ -86,6 +89,7 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                     | ImageFeatureMode::RichNormalized
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
             ) {
                 features.extend(spatial_hsv_histogram(&rgb, config.invert));
             }
@@ -94,12 +98,15 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                 ImageFeatureMode::RichNormalized
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
             ) {
                 features.extend(normalized_color_moments(&rgb, config.invert));
             }
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichHog | ImageFeatureMode::RichTexture
+                ImageFeatureMode::RichHog
+                    | ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
             ) {
                 features.extend(hog_block_features(
                     &gray_values,
@@ -107,12 +114,22 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                     config.height as usize,
                 ));
             }
-            if config.feature_mode == ImageFeatureMode::RichTexture {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichTexture | ImageFeatureMode::RichEdge
+            ) {
                 features.extend(lbp_radius_features(
                     &gray_values,
                     config.width as usize,
                     config.height as usize,
                     2,
+                ));
+            }
+            if config.feature_mode == ImageFeatureMode::RichEdge {
+                features.extend(edge_density_features(
+                    &gray_values,
+                    config.width as usize,
+                    config.height as usize,
                 ));
             }
             features
@@ -220,7 +237,8 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
         | ImageFeatureMode::RichSpatial
         | ImageFeatureMode::RichNormalized
         | ImageFeatureMode::RichHog
-        | ImageFeatureMode::RichTexture => {
+        | ImageFeatureMode::RichTexture
+        | ImageFeatureMode::RichEdge => {
             let mut features = color_histogram_from_gray(&values);
             features.extend(spatial_intensity_stats(&values, width, height));
             features.extend(hog_features(&values, width, height));
@@ -233,6 +251,7 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
                     | ImageFeatureMode::RichNormalized
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
             ) {
                 features.extend(spatial_hsv_histogram_from_gray(&values, width, height));
             }
@@ -241,17 +260,26 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
                 ImageFeatureMode::RichNormalized
                     | ImageFeatureMode::RichHog
                     | ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
             ) {
                 features.extend(gray_normalized_color_moments(&values));
             }
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichHog | ImageFeatureMode::RichTexture
+                ImageFeatureMode::RichHog
+                    | ImageFeatureMode::RichTexture
+                    | ImageFeatureMode::RichEdge
             ) {
                 features.extend(hog_block_features(&values, width, height));
             }
-            if config.feature_mode == ImageFeatureMode::RichTexture {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichTexture | ImageFeatureMode::RichEdge
+            ) {
                 features.extend(lbp_radius_features(&values, width, height, 2));
+            }
+            if config.feature_mode == ImageFeatureMode::RichEdge {
+                features.extend(edge_density_features(&values, width, height));
             }
             features
         }
@@ -558,6 +586,45 @@ fn lbp_radius_features(values: &[f64], width: usize, height: usize, radius: usiz
                 *value /= sum;
             }
         }
+    }
+
+    features
+}
+
+fn edge_density_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
+    let cell_count = SPATIAL_GRID * SPATIAL_GRID;
+    let mut magnitudes = vec![0.0; cell_count];
+    let mut horizontal_edges = vec![0.0; cell_count];
+    let mut vertical_edges = vec![0.0; cell_count];
+    let mut counts = vec![0usize; cell_count];
+
+    if width < 3 || height < 3 {
+        return vec![0.0; EDGE_DENSITY_LEN];
+    }
+
+    for y in 1..height - 1 {
+        for x in 1..width - 1 {
+            let center = y * width + x;
+            if center >= values.len() {
+                continue;
+            }
+
+            let gx = values[y * width + x + 1] - values[y * width + x - 1];
+            let gy = values[(y + 1) * width + x] - values[(y - 1) * width + x];
+            let cell = spatial_cell(x, y, width, height);
+            magnitudes[cell] += (gx * gx + gy * gy).sqrt();
+            horizontal_edges[cell] += gx.abs();
+            vertical_edges[cell] += gy.abs();
+            counts[cell] += 1;
+        }
+    }
+
+    let mut features = Vec::with_capacity(EDGE_DENSITY_LEN);
+    for cell in 0..cell_count {
+        let count = counts[cell].max(1) as f64;
+        features.push((magnitudes[cell] / count).clamp(0.0, 1.0));
+        features.push((horizontal_edges[cell] / count).clamp(0.0, 1.0));
+        features.push((vertical_edges[cell] / count).clamp(0.0, 1.0));
     }
 
     features
