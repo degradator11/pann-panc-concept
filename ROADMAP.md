@@ -18,6 +18,7 @@ The prototype can:
 - skip corrupt image files during folder benchmarks
 - compare image feature modes: `pixels`, `color`, `hog`, `combined`, `rich`,
   `rich-spatial`, `rich-normalized`, and `rich-hog`
+  plus `rich-texture`
 - compare image resize modes: `stretch`, `center-crop`, and `letterbox`
 - compare PANN correction modes in benchmark matrix runs
 - report JSON or CSV metrics
@@ -53,6 +54,7 @@ not artifact persistence or simply running more epochs.
   - rich-spatial regional HSV vector
   - rich-normalized chromaticity-moment vector
   - rich-hog block-normalized HOG vector
+  - rich-texture multi-scale LBP vector
 - Separate train/eval image folders with class-name label matching
 - Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
 - Image benchmark matrix command with CSV/JSON report output, including
@@ -131,14 +133,15 @@ Latest feature-quality result:
 | PANN | rich-spatial, center-crop resize | 64 | 1,2,3 | 68.5% | 70.3% |
 | PANN | rich-normalized, center-crop resize | 64 | 1,2,3 | 68.6% | 70.5% |
 | PANN | rich-hog, center-crop resize | 64 | 1,2,3 | 70.1% | 71.6% |
+| PANN | rich-texture, center-crop resize | 64 | 1,2,3 | 71.5% | 73.3% |
 | PANC-like | rich | 64 | 1 | 59.6% | 59.6% |
 
 Interpretation: `rich` features and 64px vectorization produced the first
 repeatable movement beyond the old 60.7% Cats/Dogs ceiling. Center-crop
 normalization raised the stable PANN result to about 68%. `rich-spatial` and
-`rich-normalized` produced the first 70%+ short-dataset runs. `rich-hog` is the
-first repeatable 70%+ mean result and the current best classical feature mode,
-though Dog remains the weaker class.
+`rich-normalized` produced the first 70%+ short-dataset runs. `rich-hog` was
+the first repeatable 70%+ mean result, and `rich-texture` is now the current
+best classical feature mode. Dog remains the weaker class.
 
 Latest learning-curve result, modeled after the public Progress tests page's
 target-MSE/epoch/error/time reporting:
@@ -371,7 +374,8 @@ Classical image features to try before pretrained embeddings:
 - normalized color moments: implemented as `--image-features rich-normalized`
 - improved HOG cell/block normalization: implemented as `--image-features
   rich-hog`
-- multi-scale local binary patterns or other texture descriptors
+- multi-scale local binary patterns or other texture descriptors: implemented
+  as `--image-features rich-texture`
 - edge density by image region
 - simple symmetry/layout features
 - simple foreground/background normalization for object datasets

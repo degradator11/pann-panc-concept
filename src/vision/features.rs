@@ -24,6 +24,7 @@ pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOME
 pub(super) const RICH_SPATIAL_LEN: usize = RICH_LEN + SPATIAL_HSV_LEN;
 pub(super) const RICH_NORMALIZED_LEN: usize = RICH_SPATIAL_LEN + NORMALIZED_COLOR_MOMENTS_LEN;
 pub(super) const RICH_HOG_LEN: usize = RICH_NORMALIZED_LEN + HOG_BLOCK_LEN;
+pub(super) const RICH_TEXTURE_LEN: usize = RICH_HOG_LEN + LBP_LEN;
 
 pub(super) struct ImageProcessingStep {
     pub name: &'static str,
@@ -57,7 +58,8 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
         ImageFeatureMode::Rich
         | ImageFeatureMode::RichSpatial
         | ImageFeatureMode::RichNormalized
-        | ImageFeatureMode::RichHog => {
+        | ImageFeatureMode::RichHog
+        | ImageFeatureMode::RichTexture => {
             let rgb = resized.to_rgb8();
             let gray_values = grayscale_pixels(&resized.to_luma8(), config.invert);
             let mut features = color_histogram(&rgb, config.invert);
@@ -83,20 +85,34 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                 ImageFeatureMode::RichSpatial
                     | ImageFeatureMode::RichNormalized
                     | ImageFeatureMode::RichHog
+                    | ImageFeatureMode::RichTexture
             ) {
                 features.extend(spatial_hsv_histogram(&rgb, config.invert));
             }
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichNormalized | ImageFeatureMode::RichHog
+                ImageFeatureMode::RichNormalized
+                    | ImageFeatureMode::RichHog
+                    | ImageFeatureMode::RichTexture
             ) {
                 features.extend(normalized_color_moments(&rgb, config.invert));
             }
-            if config.feature_mode == ImageFeatureMode::RichHog {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichHog | ImageFeatureMode::RichTexture
+            ) {
                 features.extend(hog_block_features(
                     &gray_values,
                     config.width as usize,
                     config.height as usize,
+                ));
+            }
+            if config.feature_mode == ImageFeatureMode::RichTexture {
+                features.extend(lbp_radius_features(
+                    &gray_values,
+                    config.width as usize,
+                    config.height as usize,
+                    2,
                 ));
             }
             features
@@ -203,7 +219,8 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
         ImageFeatureMode::Rich
         | ImageFeatureMode::RichSpatial
         | ImageFeatureMode::RichNormalized
-        | ImageFeatureMode::RichHog => {
+        | ImageFeatureMode::RichHog
+        | ImageFeatureMode::RichTexture => {
             let mut features = color_histogram_from_gray(&values);
             features.extend(spatial_intensity_stats(&values, width, height));
             features.extend(hog_features(&values, width, height));
@@ -215,17 +232,26 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
                 ImageFeatureMode::RichSpatial
                     | ImageFeatureMode::RichNormalized
                     | ImageFeatureMode::RichHog
+                    | ImageFeatureMode::RichTexture
             ) {
                 features.extend(spatial_hsv_histogram_from_gray(&values, width, height));
             }
             if matches!(
                 config.feature_mode,
-                ImageFeatureMode::RichNormalized | ImageFeatureMode::RichHog
+                ImageFeatureMode::RichNormalized
+                    | ImageFeatureMode::RichHog
+                    | ImageFeatureMode::RichTexture
             ) {
                 features.extend(gray_normalized_color_moments(&values));
             }
-            if config.feature_mode == ImageFeatureMode::RichHog {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichHog | ImageFeatureMode::RichTexture
+            ) {
                 features.extend(hog_block_features(&values, width, height));
+            }
+            if config.feature_mode == ImageFeatureMode::RichTexture {
+                features.extend(lbp_radius_features(&values, width, height, 2));
             }
             features
         }
@@ -483,13 +509,17 @@ fn spatial_intensity_stats(values: &[f64], width: usize, height: usize) -> Vec<f
 }
 
 fn lbp_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
+    lbp_radius_features(values, width, height, 1)
+}
+
+fn lbp_radius_features(values: &[f64], width: usize, height: usize, radius: usize) -> Vec<f64> {
     let mut features = vec![0.0; LBP_LEN];
-    if width < 3 || height < 3 {
+    if radius == 0 || width <= radius * 2 || height <= radius * 2 {
         return features;
     }
 
-    for y in 1..height - 1 {
-        for x in 1..width - 1 {
+    for y in radius..height - radius {
+        for x in radius..width - radius {
             let center_index = y * width + x;
             let Some(center) = values.get(center_index).copied() else {
                 continue;
@@ -497,14 +527,14 @@ fn lbp_features(values: &[f64], width: usize, height: usize) -> Vec<f64> {
 
             let mut code = 0u8;
             let neighbors = [
-                (x - 1, y - 1),
-                (x, y - 1),
-                (x + 1, y - 1),
-                (x + 1, y),
-                (x + 1, y + 1),
-                (x, y + 1),
-                (x - 1, y + 1),
-                (x - 1, y),
+                (x - radius, y - radius),
+                (x, y - radius),
+                (x + radius, y - radius),
+                (x + radius, y),
+                (x + radius, y + radius),
+                (x, y + radius),
+                (x - radius, y + radius),
+                (x - radius, y),
             ];
             for (bit, (neighbor_x, neighbor_y)) in neighbors.into_iter().enumerate() {
                 let neighbor_index = neighbor_y * width + neighbor_x;

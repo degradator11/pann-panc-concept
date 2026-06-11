@@ -57,12 +57,14 @@ cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets
 ```
 
 Image benchmarks support `--image-features pixels`, `color`, `hog`,
-`combined`, `rich`, `rich-spatial`, `rich-normalized`, and `rich-hog`. The
-`combined` mode is the compact classical baseline. The `rich` mode adds HSV
-histograms, color moments, and local binary pattern texture features before
-PANN/PANC processing. `rich-spatial` extends it with per-region HSV histograms
-to preserve coarse color layout. `rich-normalized` adds brightness-normalized
-RGB chromaticity moments. `rich-hog` adds block-normalized HOG descriptors.
+`combined`, `rich`, `rich-spatial`, `rich-normalized`, `rich-hog`, and
+`rich-texture`. The `combined` mode is the compact classical baseline. The
+`rich` mode adds HSV histograms, color moments, and local binary pattern
+texture features before PANN/PANC processing. `rich-spatial` extends it with
+per-region HSV histograms to preserve coarse color layout. `rich-normalized`
+adds brightness-normalized RGB chromaticity moments. `rich-hog` adds
+block-normalized HOG descriptors. `rich-texture` adds a second-radius LBP
+descriptor.
 
 Image preprocessing now also supports `--image-resize stretch`,
 `center-crop`, and `letterbox`. Stretch is the default historical behavior.
