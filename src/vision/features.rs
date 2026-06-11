@@ -12,6 +12,7 @@ const LBP_BINS: usize = 16;
 pub(super) const COLOR_HISTOGRAM_LEN: usize = COLOR_BINS * 3;
 pub(super) const HSV_HISTOGRAM_LEN: usize = HSV_BINS * 3;
 pub(super) const COLOR_MOMENTS_LEN: usize = 12;
+pub(super) const NORMALIZED_COLOR_MOMENTS_LEN: usize = 6;
 pub(super) const SPATIAL_STATS_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * 2;
 pub(super) const HOG_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HOG_BINS;
 pub(super) const LBP_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * LBP_BINS;
@@ -19,6 +20,7 @@ pub(super) const SPATIAL_HSV_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HSV_HIST
 pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN + HOG_LEN;
 pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
 pub(super) const RICH_SPATIAL_LEN: usize = RICH_LEN + SPATIAL_HSV_LEN;
+pub(super) const RICH_NORMALIZED_LEN: usize = RICH_SPATIAL_LEN + NORMALIZED_COLOR_MOMENTS_LEN;
 
 pub(super) struct ImageProcessingStep {
     pub name: &'static str,
@@ -49,7 +51,9 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
             ));
             features
         }
-        ImageFeatureMode::Rich | ImageFeatureMode::RichSpatial => {
+        ImageFeatureMode::Rich
+        | ImageFeatureMode::RichSpatial
+        | ImageFeatureMode::RichNormalized => {
             let rgb = resized.to_rgb8();
             let gray_values = grayscale_pixels(&resized.to_luma8(), config.invert);
             let mut features = color_histogram(&rgb, config.invert);
@@ -70,8 +74,14 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                 config.width as usize,
                 config.height as usize,
             ));
-            if config.feature_mode == ImageFeatureMode::RichSpatial {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichSpatial | ImageFeatureMode::RichNormalized
+            ) {
                 features.extend(spatial_hsv_histogram(&rgb, config.invert));
+            }
+            if config.feature_mode == ImageFeatureMode::RichNormalized {
+                features.extend(normalized_color_moments(&rgb, config.invert));
             }
             features
         }
@@ -174,15 +184,23 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
             features.extend(hog_features(&values, width, height));
             features
         }
-        ImageFeatureMode::Rich | ImageFeatureMode::RichSpatial => {
+        ImageFeatureMode::Rich
+        | ImageFeatureMode::RichSpatial
+        | ImageFeatureMode::RichNormalized => {
             let mut features = color_histogram_from_gray(&values);
             features.extend(spatial_intensity_stats(&values, width, height));
             features.extend(hog_features(&values, width, height));
             features.extend(hsv_histogram_from_gray(&values));
             features.extend(gray_color_moments(&values));
             features.extend(lbp_features(&values, width, height));
-            if config.feature_mode == ImageFeatureMode::RichSpatial {
+            if matches!(
+                config.feature_mode,
+                ImageFeatureMode::RichSpatial | ImageFeatureMode::RichNormalized
+            ) {
                 features.extend(spatial_hsv_histogram_from_gray(&values, width, height));
+            }
+            if config.feature_mode == ImageFeatureMode::RichNormalized {
+                features.extend(gray_normalized_color_moments(&values));
             }
             features
         }
@@ -360,6 +378,32 @@ fn gray_color_moments(values: &[f64]) -> Vec<f64> {
     let mut features = channel_mean_std(&triples);
     features.extend(channel_mean_std(&triples));
     features
+}
+
+fn normalized_color_moments(image: &RgbImage, invert: bool) -> Vec<f64> {
+    let chromaticities = image
+        .pixels()
+        .map(|pixel| {
+            let r = channel_value(pixel.0[0], invert);
+            let g = channel_value(pixel.0[1], invert);
+            let b = channel_value(pixel.0[2], invert);
+            normalized_rgb([r, g, b])
+        })
+        .collect::<Vec<_>>();
+    channel_mean_std(&chromaticities)
+}
+
+fn gray_normalized_color_moments(values: &[f64]) -> Vec<f64> {
+    let chromaticities = values
+        .iter()
+        .map(|_| [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0])
+        .collect::<Vec<_>>();
+    channel_mean_std(&chromaticities)
+}
+
+fn normalized_rgb(rgb: [f64; 3]) -> [f64; 3] {
+    let sum = (rgb[0] + rgb[1] + rgb[2]).max(f64::EPSILON);
+    [rgb[0] / sum, rgb[1] / sum, rgb[2] / sum]
 }
 
 fn channel_mean_std(values: &[[f64; 3]]) -> Vec<f64> {
