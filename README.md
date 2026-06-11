@@ -100,7 +100,7 @@ Useful options:
 --image-size 16
 --image-width 16
 --image-height 16
---image-resize stretch|center-crop|letterbox
+--image-resize stretch|center-crop|letterbox|foreground-crop
 --samples-per-class 80
 --debug-out reports\debug-folder
 --debug-train-data path\to\train-folder
@@ -194,10 +194,15 @@ Resize modes control how non-square images become fixed-size vectors:
 --image-resize stretch       resize directly to width x height; default
 --image-resize center-crop   crop the central square, then resize
 --image-resize letterbox     preserve aspect ratio with neutral gray padding
+--image-resize foreground-crop
+                             crop pixels that differ from the border background, then resize
 ```
 
 The resize mode is part of the model's preprocessing. Artifact training stores
 it in the JSON file, and `eval-*` / `predict-*` reuse the saved mode.
+`foreground-crop` is a simple object-dataset normalization mode; it is most
+useful for cleaner datasets with stable backgrounds and falls back to
+center-crop when no reliable foreground box is found.
 
 ## Real Image Datasets
 
@@ -341,13 +346,13 @@ feature modes, image sizes, interval counts, and random seeds.
 Small Cats/Dogs matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox,foreground-crop --epochs 12
 ```
 
 Larger matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox,foreground-crop --epochs 12
 ```
 
 Notes:

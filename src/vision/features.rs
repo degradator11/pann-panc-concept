@@ -159,6 +159,7 @@ fn prepare_image(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage
         }
         ImageResizeMode::CenterCrop => center_crop(image, config),
         ImageResizeMode::Letterbox => letterbox(image, config),
+        ImageResizeMode::ForegroundCrop => foreground_crop(image, config),
     }
 }
 
@@ -200,6 +201,17 @@ pub(super) fn image_processing_steps(
                 image: letterbox_from_resized(contained, config),
             });
         }
+        ImageResizeMode::ForegroundCrop => {
+            let cropped = foreground_crop_only(&image);
+            steps.push(ImageProcessingStep {
+                name: "foreground_crop",
+                image: cropped.clone(),
+            });
+            steps.push(ImageProcessingStep {
+                name: "resize_exact",
+                image: cropped.resize_exact(config.width, config.height, FilterType::Triangle),
+            });
+        }
     }
 
     steps
@@ -214,11 +226,65 @@ fn letterbox(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
     letterbox_from_resized(resized, config)
 }
 
+fn foreground_crop(image: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
+    foreground_crop_only(&image).resize_exact(config.width, config.height, FilterType::Triangle)
+}
+
 fn center_crop_only(image: &DynamicImage) -> DynamicImage {
     let crop_size = image.width().min(image.height()).max(1);
     let left = (image.width().saturating_sub(crop_size)) / 2;
     let top = (image.height().saturating_sub(crop_size)) / 2;
     image.crop_imm(left, top, crop_size, crop_size)
+}
+
+fn foreground_crop_only(image: &DynamicImage) -> DynamicImage {
+    let rgb = image.to_rgb8();
+    let width = rgb.width();
+    let height = rgb.height();
+    if width < 3 || height < 3 {
+        return image.clone();
+    }
+
+    let (background, threshold) = estimate_border_background(&rgb);
+    let mut left = width;
+    let mut top = height;
+    let mut right = 0;
+    let mut bottom = 0;
+    let mut foreground_pixels = 0u32;
+
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = rgb.get_pixel(x, y);
+            if normalized_rgb_distance(pixel, background) > threshold {
+                left = left.min(x);
+                top = top.min(y);
+                right = right.max(x);
+                bottom = bottom.max(y);
+                foreground_pixels += 1;
+            }
+        }
+    }
+
+    let pixel_count = width * height;
+    if foreground_pixels < (pixel_count / 100).max(4) {
+        return center_crop_only(image);
+    }
+
+    let bbox_width = right - left + 1;
+    let bbox_height = bottom - top + 1;
+    let bbox_area = bbox_width * bbox_height;
+    if bbox_area as f64 / f64::from(pixel_count) > 0.95 {
+        return center_crop_only(image);
+    }
+
+    let padding_x = ((f64::from(bbox_width) * 0.08).ceil() as u32).max(1);
+    let padding_y = ((f64::from(bbox_height) * 0.08).ceil() as u32).max(1);
+    left = left.saturating_sub(padding_x);
+    top = top.saturating_sub(padding_y);
+    right = (right + padding_x).min(width - 1);
+    bottom = (bottom + padding_y).min(height - 1);
+
+    image.crop_imm(left, top, right - left + 1, bottom - top + 1)
 }
 
 fn letterbox_from_resized(resized: DynamicImage, config: ImageVectorConfig) -> DynamicImage {
@@ -227,6 +293,65 @@ fn letterbox_from_resized(resized: DynamicImage, config: ImageVectorConfig) -> D
     let y = (config.height.saturating_sub(resized.height()) / 2) as i64;
     overlay(&mut canvas, &resized.to_rgb8(), x, y);
     DynamicImage::ImageRgb8(canvas)
+}
+
+fn estimate_border_background(image: &RgbImage) -> ([f64; 3], f64) {
+    let width = image.width();
+    let height = image.height();
+    let mut sums = [0.0; 3];
+    let mut count = 0.0;
+
+    for y in 0..height {
+        for x in 0..width {
+            if x != 0 && y != 0 && x != width - 1 && y != height - 1 {
+                continue;
+            }
+            let pixel = image.get_pixel(x, y);
+            for (channel, sum) in sums.iter_mut().enumerate() {
+                *sum += f64::from(pixel.0[channel]) / 255.0;
+            }
+            count += 1.0;
+        }
+    }
+
+    let background = if count > 0.0 {
+        [sums[0] / count, sums[1] / count, sums[2] / count]
+    } else {
+        [0.5, 0.5, 0.5]
+    };
+
+    let mut distances = Vec::with_capacity((width * 2 + height * 2) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            if x != 0 && y != 0 && x != width - 1 && y != height - 1 {
+                continue;
+            }
+            distances.push(normalized_rgb_distance(image.get_pixel(x, y), background));
+        }
+    }
+    let distance_count = distances.len().max(1) as f64;
+    let mean = distances.iter().sum::<f64>() / distance_count;
+    let variance = distances
+        .iter()
+        .map(|distance| {
+            let delta = distance - mean;
+            delta * delta
+        })
+        .sum::<f64>()
+        / distance_count;
+    let threshold = (mean + 2.0 * variance.sqrt()).clamp(0.08, 0.35);
+
+    (background, threshold)
+}
+
+fn normalized_rgb_distance(pixel: &Rgb<u8>, background: [f64; 3]) -> f64 {
+    let mut sum = 0.0;
+    for (channel, background_value) in background.into_iter().enumerate() {
+        let value = f64::from(pixel.0[channel]) / 255.0;
+        let delta = value - background_value;
+        sum += delta * delta;
+    }
+    (sum / 3.0).sqrt().clamp(0.0, 1.0)
 }
 
 pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConfig) -> Vec<f64> {

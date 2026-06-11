@@ -19,7 +19,8 @@ The prototype can:
 - compare image feature modes: `pixels`, `color`, `hog`, `combined`, `rich`,
   `rich-spatial`, `rich-normalized`, and `rich-hog`
   plus `rich-texture`, `rich-edge`, and `rich-layout`
-- compare image resize modes: `stretch`, `center-crop`, and `letterbox`
+- compare image resize modes: `stretch`, `center-crop`, `letterbox`, and
+  `foreground-crop`
 - compare PANN correction modes in benchmark matrix runs
 - report JSON or CSV metrics
 - write static image eval debug reports with original/processed images,
@@ -62,7 +63,8 @@ not artifact persistence or simply running more epochs.
 - Image benchmark matrix command with CSV/JSON report output, including
   correction-mode sweeps for PANN
 - PANN learning-curve reports with epoch/MSE/accuracy/time rows
-- Image resize modes for stretch, center-crop, and letterbox preprocessing
+- Image resize modes for stretch, center-crop, letterbox, and foreground-crop
+  preprocessing
 - Artifact eval diagnostics with per-class accuracy, confusion matrix, and a
   short misclassified-image list
 - Static debug reports for image artifact eval via `--debug-out`
@@ -163,6 +165,18 @@ but it was neutral/slightly worse than `rich-texture` on the tougher medium
 Cats/Dogs split. The symmetry/layout block was also neutral/slightly worse on
 mean accuracy, though it shifted some seed-level class balance. Keep
 `rich-texture` as the current classical default.
+
+Latest medium-set preprocessing smoke:
+
+| Model | Features | Resize Mode | Image Size | Seeds | Mean Eval Accuracy | Best Eval Accuracy |
+| --- | --- | --- | ---: | --- | ---: | ---: |
+| PANN | rich-texture | center-crop | 64 | 1,2,3 | 68.8% | 69.8% |
+| PANN | rich-texture | foreground-crop | 64 | 1,2,3 | 68.1% | 68.6% |
+
+Interpretation: `foreground-crop` is implemented and usable, but it slightly
+hurts this messy natural-photo Cats/Dogs split. Keep it as an object-dataset
+normalization option for cleaner backgrounds such as Fruits-360, and keep
+`center-crop` as the Cats/Dogs default.
 
 Latest learning-curve result, modeled after the public Progress tests page's
 target-MSE/epoch/error/time reporting:
@@ -400,7 +414,8 @@ Classical image features to try before pretrained embeddings:
 - edge density by image region: implemented as `--image-features rich-edge`
 - simple symmetry/layout features: implemented as `--image-features
   rich-layout`
-- simple foreground/background normalization for object datasets
+- simple foreground/background normalization for object datasets: implemented
+  as `--image-resize foreground-crop`
 
 Optional later feature path:
 

@@ -549,11 +549,12 @@ fn mark_resize_differences(predictions: &mut [ResizePrediction], artifact_mode: 
     }
 }
 
-fn all_resize_modes() -> [ImageResizeMode; 3] {
+fn all_resize_modes() -> [ImageResizeMode; 4] {
     [
         ImageResizeMode::Stretch,
         ImageResizeMode::CenterCrop,
         ImageResizeMode::Letterbox,
+        ImageResizeMode::ForegroundCrop,
     ]
 }
 

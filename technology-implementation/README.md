@@ -69,10 +69,12 @@ per-region edge-density summaries. `rich-layout` adds compact symmetry and
 foreground-layout summaries.
 
 Image preprocessing now also supports `--image-resize stretch`,
-`center-crop`, and `letterbox`. Stretch is the default historical behavior.
-Center crop and letterbox are intended for normalization experiments on
-real-world photo datasets where aspect ratio and object framing may affect
-generalization.
+`center-crop`, `letterbox`, and `foreground-crop`. Stretch is the default
+historical behavior. Center crop and letterbox are intended for normalization
+experiments on real-world photo datasets where aspect ratio and object framing
+may affect generalization. Foreground crop estimates a simple border
+background, crops pixels that differ from it, and falls back to center crop
+when no reliable object box is found.
 
 The benchmark CLI also supports persistent image artifacts with
 `train-pann-image-folder`, `eval-pann`, `predict-pann`,

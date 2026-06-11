@@ -128,6 +128,7 @@ pub enum ImageResizeMode {
     Stretch,
     CenterCrop,
     Letterbox,
+    ForegroundCrop,
 }
 
 impl ImageResizeMode {
@@ -136,6 +137,7 @@ impl ImageResizeMode {
             Self::Stretch => "stretch",
             Self::CenterCrop => "center-crop",
             Self::Letterbox => "letterbox",
+            Self::ForegroundCrop => "foreground-crop",
         }
     }
 }
@@ -148,8 +150,9 @@ impl FromStr for ImageResizeMode {
             "stretch" | "resize" | "resize-exact" => Ok(Self::Stretch),
             "center-crop" | "centercrop" | "crop" => Ok(Self::CenterCrop),
             "letterbox" | "contain" | "pad" | "padding" => Ok(Self::Letterbox),
+            "foreground-crop" | "foreground" | "object-crop" | "object" => Ok(Self::ForegroundCrop),
             other => Err(format!(
-                "invalid image resize mode {other:?}; expected stretch, center-crop, or letterbox"
+                "invalid image resize mode {other:?}; expected stretch, center-crop, letterbox, or foreground-crop"
             )),
         }
     }
@@ -537,6 +540,10 @@ mod tests {
             "contain".parse::<ImageResizeMode>().unwrap(),
             ImageResizeMode::Letterbox
         );
+        assert_eq!(
+            "object-crop".parse::<ImageResizeMode>().unwrap(),
+            ImageResizeMode::ForegroundCrop
+        );
     }
 
     #[test]
@@ -566,6 +573,44 @@ mod tests {
         assert!(letterbox[5] > 0.99);
         assert!(letterbox[10] > 0.99);
         assert!(letterbox[15] > 0.49 && letterbox[15] < 0.51);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn foreground_crop_removes_simple_border_before_resize() {
+        let root = std::env::temp_dir().join(format!(
+            "progress_ai_foreground_crop_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let image_path = root.join("object.png");
+        let mut image = RgbImage::from_pixel(8, 8, Rgb([255, 255, 255]));
+        for y in 2..6 {
+            for x in 2..6 {
+                image.put_pixel(x, y, Rgb([0, 0, 0]));
+            }
+        }
+        image.save(&image_path).unwrap();
+
+        let steps = load_image_processing_steps(
+            &image_path,
+            ImageVectorConfig::new(4, 4).with_resize_mode(ImageResizeMode::ForegroundCrop),
+        )
+        .unwrap();
+        let names = steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["original", "foreground_crop", "resize_exact"]);
+        assert_eq!(steps[1].image.width(), 6);
+        assert_eq!(steps[1].image.height(), 6);
+        assert_eq!(steps.last().unwrap().image.width(), 4);
+        assert_eq!(steps.last().unwrap().image.height(), 4);
         fs::remove_dir_all(root).unwrap();
     }
 
