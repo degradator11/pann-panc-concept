@@ -57,10 +57,11 @@ cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets
 ```
 
 Image benchmarks support `--image-features pixels`, `color`, `hog`,
-`combined`, and `rich`. The `combined` mode is the compact classical baseline.
-The `rich` mode is the current strongest Cats/Dogs classical baseline because
-it adds HSV histograms, color moments, and local binary pattern texture
-features before PANN/PANC processing.
+`combined`, `rich`, and `rich-spatial`. The `combined` mode is the compact
+classical baseline. The `rich` mode adds HSV histograms, color moments, and
+local binary pattern texture features before PANN/PANC processing.
+`rich-spatial` extends it with per-region HSV histograms to preserve coarse
+color layout.
 
 Image preprocessing now also supports `--image-resize stretch`,
 `center-crop`, and `letterbox`. Stretch is the default historical behavior.

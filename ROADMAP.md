@@ -16,7 +16,8 @@ The prototype can:
 - use deterministic train/test splits
 - use separate image train/eval folders through `--eval-data`
 - skip corrupt image files during folder benchmarks
-- compare image feature modes: `pixels`, `color`, `hog`, `combined`, and `rich`
+- compare image feature modes: `pixels`, `color`, `hog`, `combined`, `rich`,
+  and `rich-spatial`
 - compare image resize modes: `stretch`, `center-crop`, and `letterbox`
 - compare PANN correction modes in benchmark matrix runs
 - report JSON or CSV metrics
@@ -49,6 +50,7 @@ not artifact persistence or simply running more epochs.
   - HOG-like edge buckets
   - combined color/layout/edge vector
   - rich HSV/color-moment/texture vector
+  - rich-spatial regional HSV vector
 - Separate train/eval image folders with class-name label matching
 - Persistent PANN/PANC-like image artifacts for train/eval/predict workflows
 - Image benchmark matrix command with CSV/JSON report output, including
@@ -123,12 +125,15 @@ Latest feature-quality result:
 | --- | --- | ---: | --- | ---: | ---: |
 | PANN | combined | 64 | 1,2,3 | 62.4% | 62.8% |
 | PANN | rich, stretch resize | 64 | 1,2,3 | 64.9% | 65.9% |
+| PANN | rich, center-crop resize | 64 | 1,2,3 | 68.2% | 68.6% |
+| PANN | rich-spatial, center-crop resize | 64 | 1,2,3 | 68.5% | 70.3% |
 | PANC-like | rich | 64 | 1 | 59.6% | 59.6% |
 
 Interpretation: `rich` features and 64px vectorization produced the first
-repeatable movement beyond the old 60.7% Cats/Dogs ceiling. The later
-normalization matrix improved the best short-dataset run further to 68.7% with
-center-crop, but accuracy is still not production-grade.
+repeatable movement beyond the old 60.7% Cats/Dogs ceiling. Center-crop
+normalization raised the stable PANN result to about 68%. `rich-spatial`
+produced the first 70%+ short-dataset run, but its mean Dog accuracy was weaker
+than plain `rich`, so it is promising rather than a clean replacement.
 
 Latest learning-curve result, modeled after the public Progress tests page's
 target-MSE/epoch/error/time reporting:
@@ -356,7 +361,8 @@ Planned benchmark improvements:
 
 Classical image features to try before pretrained embeddings:
 
-- improved HSV histograms with spatial regions
+- improved HSV histograms with spatial regions: implemented as
+  `--image-features rich-spatial`
 - normalized color moments
 - improved HOG cell/block normalization
 - multi-scale local binary patterns or other texture descriptors

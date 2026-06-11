@@ -15,8 +15,10 @@ pub(super) const COLOR_MOMENTS_LEN: usize = 12;
 pub(super) const SPATIAL_STATS_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * 2;
 pub(super) const HOG_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HOG_BINS;
 pub(super) const LBP_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * LBP_BINS;
+pub(super) const SPATIAL_HSV_LEN: usize = SPATIAL_GRID * SPATIAL_GRID * HSV_HISTOGRAM_LEN;
 pub(super) const COMBINED_LEN: usize = COLOR_HISTOGRAM_LEN + SPATIAL_STATS_LEN + HOG_LEN;
 pub(super) const RICH_LEN: usize = COMBINED_LEN + HSV_HISTOGRAM_LEN + COLOR_MOMENTS_LEN + LBP_LEN;
+pub(super) const RICH_SPATIAL_LEN: usize = RICH_LEN + SPATIAL_HSV_LEN;
 
 pub(super) struct ImageProcessingStep {
     pub name: &'static str,
@@ -47,7 +49,7 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
             ));
             features
         }
-        ImageFeatureMode::Rich => {
+        ImageFeatureMode::Rich | ImageFeatureMode::RichSpatial => {
             let rgb = resized.to_rgb8();
             let gray_values = grayscale_pixels(&resized.to_luma8(), config.invert);
             let mut features = color_histogram(&rgb, config.invert);
@@ -68,6 +70,9 @@ pub(super) fn image_to_vector(image: DynamicImage, config: ImageVectorConfig) ->
                 config.width as usize,
                 config.height as usize,
             ));
+            if config.feature_mode == ImageFeatureMode::RichSpatial {
+                features.extend(spatial_hsv_histogram(&rgb, config.invert));
+            }
             features
         }
     }
@@ -169,13 +174,16 @@ pub(super) fn vectorize_grayscale_values(values: &[f64], config: ImageVectorConf
             features.extend(hog_features(&values, width, height));
             features
         }
-        ImageFeatureMode::Rich => {
+        ImageFeatureMode::Rich | ImageFeatureMode::RichSpatial => {
             let mut features = color_histogram_from_gray(&values);
             features.extend(spatial_intensity_stats(&values, width, height));
             features.extend(hog_features(&values, width, height));
             features.extend(hsv_histogram_from_gray(&values));
             features.extend(gray_color_moments(&values));
             features.extend(lbp_features(&values, width, height));
+            if config.feature_mode == ImageFeatureMode::RichSpatial {
+                features.extend(spatial_hsv_histogram_from_gray(&values, width, height));
+            }
             features
         }
     }
@@ -258,6 +266,70 @@ fn hsv_histogram_from_gray(values: &[f64]) -> Vec<f64> {
     }
 
     features
+}
+
+fn spatial_hsv_histogram(image: &RgbImage, invert: bool) -> Vec<f64> {
+    let width = image.width() as usize;
+    let height = image.height() as usize;
+    let cell_count = SPATIAL_GRID * SPATIAL_GRID;
+    let mut features = vec![0.0; SPATIAL_HSV_LEN];
+    let mut counts = vec![0usize; cell_count];
+
+    for (x, y, pixel) in image.enumerate_pixels() {
+        let cell = spatial_cell(x as usize, y as usize, width, height);
+        counts[cell] += 1;
+        let r = channel_value(pixel.0[0], invert);
+        let g = channel_value(pixel.0[1], invert);
+        let b = channel_value(pixel.0[2], invert);
+        let hsv = rgb_to_hsv(r, g, b);
+        add_spatial_hsv_bins(&mut features, cell, hsv);
+    }
+
+    normalize_spatial_histogram(&mut features, &counts, HSV_HISTOGRAM_LEN);
+    features
+}
+
+fn spatial_hsv_histogram_from_gray(values: &[f64], width: usize, height: usize) -> Vec<f64> {
+    let cell_count = SPATIAL_GRID * SPATIAL_GRID;
+    let mut features = vec![0.0; SPATIAL_HSV_LEN];
+    let mut counts = vec![0usize; cell_count];
+
+    for y in 0..height {
+        for x in 0..width {
+            let Some(value) = values.get(y * width + x).copied() else {
+                continue;
+            };
+            let cell = spatial_cell(x, y, width, height);
+            counts[cell] += 1;
+            let value = value.clamp(0.0, 1.0);
+            add_spatial_hsv_bins(&mut features, cell, [value, value, value]);
+        }
+    }
+
+    normalize_spatial_histogram(&mut features, &counts, HSV_HISTOGRAM_LEN);
+    features
+}
+
+fn add_spatial_hsv_bins(features: &mut [f64], cell: usize, hsv: [f64; 3]) {
+    let cell_offset = cell * HSV_HISTOGRAM_LEN;
+    for (channel, value) in hsv.into_iter().enumerate() {
+        let bin = (value.clamp(0.0, 1.0) * HSV_BINS as f64).floor() as usize;
+        let bin = bin.min(HSV_BINS - 1);
+        features[cell_offset + channel * HSV_BINS + bin] += 1.0;
+    }
+}
+
+fn normalize_spatial_histogram(features: &mut [f64], counts: &[usize], histogram_len: usize) {
+    for (cell, count) in counts.iter().copied().enumerate() {
+        if count == 0 {
+            continue;
+        }
+        let start = cell * histogram_len;
+        let end = start + histogram_len;
+        for value in &mut features[start..end] {
+            *value /= count as f64;
+        }
+    }
 }
 
 fn color_moments(image: &RgbImage, invert: bool) -> Vec<f64> {

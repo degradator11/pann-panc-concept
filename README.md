@@ -177,8 +177,9 @@ size, then vectorized. `--image-features pixels` uses raw grayscale pixels.
 histograms, spatial intensity statistics, and HOG-like edge buckets. The
 additional `color` and `hog` modes are available for ablation runs.
 `--image-features rich` adds HSV histograms, RGB/HSV color moments, and local
-binary pattern texture features. It is currently the strongest classical
-feature mode for Cats/Dogs, at the cost of more memory and slower comparison.
+binary pattern texture features. `--image-features rich-spatial` extends that
+with per-region HSV histograms so the classifier can see where colors appear,
+at the cost of a larger vector.
 
 Resize modes control how non-square images become fixed-size vectors:
 
@@ -333,13 +334,13 @@ feature modes, image sizes, interval counts, and random seeds.
 Small Cats/Dogs matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.csv --format csv --matrix-models pann,panc --matrix-features pixels,combined,rich,rich-spatial --matrix-image-sizes 32,64 --matrix-intervals 8 --matrix-seeds 42 --matrix-resize-modes stretch,letterbox --epochs 12
 ```
 
 Larger matrix:
 
 ```powershell
-cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
+cargo run --release --bin research-bench -- image-matrix --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out reports\cats-dogs-matrix.json --format json --matrix-models pann,panc --matrix-features pixels,hog,combined,rich,rich-spatial --matrix-image-sizes 16,32,64 --matrix-intervals 4,8,16 --matrix-seeds 1,2,3 --matrix-resize-modes stretch,center-crop,letterbox --epochs 12
 ```
 
 Notes:
