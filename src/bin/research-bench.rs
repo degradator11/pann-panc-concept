@@ -14,6 +14,7 @@ use progress_ai::pann::{CorrectionMode, Distributor, IntervalStrategy, PannConfi
 use progress_ai::preprocess::{
     Dataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split,
 };
+use progress_ai::vision::{ImageVectorConfig, load_image_folder, synthetic_image_dataset};
 
 #[derive(Debug)]
 struct Args {
@@ -23,6 +24,9 @@ struct Args {
     epochs: usize,
     intervals: usize,
     seed: u64,
+    image_width: u32,
+    image_height: u32,
+    samples_per_class: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,11 +55,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     let metrics = match args.command.as_str() {
         "pann-iris" => run_pann(load_iris(args.data_path.as_deref())?, "iris", &args)?,
         "pann-synthetic" => run_pann(synthetic_dataset(args.seed), "synthetic", &args)?,
+        "pann-image-synthetic" => run_pann(
+            synthetic_image_dataset(image_config(&args), args.samples_per_class, args.seed)?,
+            "image-synthetic",
+            &args,
+        )?,
+        "pann-image-folder" => run_pann(
+            load_image_folder(required_data_path(&args)?, image_config(&args))?,
+            "image-folder",
+            &args,
+        )?,
         "panc-iris" => run_panc(load_iris(args.data_path.as_deref())?, "iris", &args)?,
         "panc-synthetic" => run_panc(synthetic_dataset(args.seed), "synthetic", &args)?,
+        "panc-image-synthetic" => run_panc(
+            synthetic_image_dataset(image_config(&args), args.samples_per_class, args.seed)?,
+            "image-synthetic",
+            &args,
+        )?,
+        "panc-image-folder" => run_panc(
+            load_image_folder(required_data_path(&args)?, image_config(&args))?,
+            "image-folder",
+            &args,
+        )?,
         command => {
             return Err(format!(
-                "unknown command {command}; expected pann-iris, pann-synthetic, panc-iris, panc-synthetic"
+                "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder"
             )
             .into());
         }
@@ -68,7 +92,7 @@ fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw
         .next()
-        .ok_or("usage: research-bench <pann-iris|pann-synthetic|panc-iris|panc-synthetic> [--format json|csv] [--data path] [--epochs n] [--intervals n] [--seed n]")?;
+        .ok_or("usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder> [--format json|csv] [--data path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--samples-per-class n]")?;
 
     let mut args = Args {
         command,
@@ -77,6 +101,9 @@ fn parse_args() -> Result<Args, Box<dyn Error>> {
         epochs: 12,
         intervals: 8,
         seed: 42,
+        image_width: 16,
+        image_height: 16,
+        samples_per_class: 80,
     };
 
     while let Some(flag) = raw.next() {
@@ -107,11 +134,47 @@ fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .ok_or("--seed requires a value")?
                     .parse::<u64>()?;
             }
+            "--image-size" => {
+                let size = raw
+                    .next()
+                    .ok_or("--image-size requires a value")?
+                    .parse::<u32>()?;
+                args.image_width = size;
+                args.image_height = size;
+            }
+            "--image-width" => {
+                args.image_width = raw
+                    .next()
+                    .ok_or("--image-width requires a value")?
+                    .parse::<u32>()?;
+            }
+            "--image-height" => {
+                args.image_height = raw
+                    .next()
+                    .ok_or("--image-height requires a value")?
+                    .parse::<u32>()?;
+            }
+            "--samples-per-class" => {
+                args.samples_per_class = raw
+                    .next()
+                    .ok_or("--samples-per-class requires a value")?
+                    .parse::<usize>()?;
+            }
             other => return Err(format!("unknown option {other}").into()),
         }
     }
 
     Ok(args)
+}
+
+fn image_config(args: &Args) -> ImageVectorConfig {
+    ImageVectorConfig::new(args.image_width, args.image_height)
+}
+
+fn required_data_path(args: &Args) -> Result<&str, Box<dyn Error>> {
+    args.data_path
+        .as_deref()
+        .ok_or_else(|| "--data path is required for image-folder benchmarks".into())
 }
 
 fn run_pann(

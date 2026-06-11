@@ -74,13 +74,15 @@ example.
 
 ## Run Research Benchmarks
 
-The benchmark binary supports four subcommands:
+The benchmark binary supports tabular and image-oriented subcommands:
 
 ```powershell
 cargo run --bin research-bench -- pann-iris --format json
 cargo run --bin research-bench -- panc-iris --format csv
 cargo run --bin research-bench -- pann-synthetic --epochs 20 --intervals 16
 cargo run --bin research-bench -- panc-synthetic
+cargo run --bin research-bench -- pann-image-synthetic --image-size 16
+cargo run --bin research-bench -- panc-image-synthetic --image-size 16
 ```
 
 Useful options:
@@ -91,6 +93,10 @@ Useful options:
 --epochs 12
 --intervals 8
 --seed 42
+--image-size 16
+--image-width 16
+--image-height 16
+--samples-per-class 80
 ```
 
 The built-in Iris dataset is stored at:
@@ -111,6 +117,52 @@ Example with a custom CSV:
 ```powershell
 cargo run --bin research-bench -- pann-iris --data C:\path\to\iris.csv --format json
 ```
+
+## Image Recognition Benchmarks
+
+Images are converted into numeric vectors before being passed into PANN or
+PANC:
+
+```text
+image -> resize -> grayscale pixels -> values in [0, 1] -> classifier
+```
+
+For example, a 16x16 image becomes a vector with 256 values. With PANN and 8
+intervals over 3 classes, the corrective-weight tensor has:
+
+```text
+256 pixels * 8 intervals * 3 classes = 6144 weights
+```
+
+Synthetic image benchmarks generate simple vertical, horizontal, and diagonal
+line-pattern images in memory:
+
+```powershell
+cargo run --bin research-bench -- pann-image-synthetic --image-size 16 --epochs 12 --intervals 8 --format json
+cargo run --bin research-bench -- panc-image-synthetic --image-size 16 --format csv
+```
+
+Folder-based image benchmarks expect one subdirectory per class:
+
+```text
+my-images\
+  cat\
+    cat-001.png
+    cat-002.jpg
+  dog\
+    dog-001.png
+    dog-002.jpg
+```
+
+Run PANN or PANC-like recognition over that folder:
+
+```powershell
+cargo run --bin research-bench -- pann-image-folder --data C:\path\to\my-images --image-size 32 --epochs 20 --intervals 8
+cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images --image-size 32
+```
+
+Supported image formats are PNG and JPEG. Images are resized to the configured
+size and converted to grayscale.
 
 ## Library Usage
 
@@ -176,12 +228,23 @@ let query = encoder.encode(&[0.9, 0.1, 0.8]);
 let prediction = comparator.predict_label(&query, 1)?;
 ```
 
+Image vectorization example:
+
+```rust
+use progress_ai::vision::{ImageVectorConfig, load_image_as_vector};
+
+let config = ImageVectorConfig::new(32, 32);
+let vector = load_image_as_vector("digit.png", config)?;
+assert_eq!(vector.len(), 32 * 32);
+```
+
 ## Project Layout
 
 ```text
 src\pann.rs                    PANN-like model and training logic
 src\panc.rs                    PANC-like dense and binary comparators
 src\preprocess.rs              Dataset preprocessing utilities
+src\vision.rs                  Image loading and vectorization utilities
 src\bin\research-bench.rs      Benchmark CLI
 tests\research_integration.rs  Synthetic integration tests
 data\iris.csv                  Local Iris benchmark data

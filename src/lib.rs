@@ -8,3 +8,4 @@
 pub mod panc;
 pub mod pann;
 pub mod preprocess;
+pub mod vision;

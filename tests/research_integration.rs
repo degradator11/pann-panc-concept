@@ -1,5 +1,6 @@
 use progress_ai::panc::{PancComparator, SimilarityMetric};
 use progress_ai::pann::{Distributor, PannModel, one_hot};
+use progress_ai::vision::{ImageVectorConfig, synthetic_image_dataset};
 
 #[test]
 fn pann_reaches_high_accuracy_on_synthetic_separable_data() {
@@ -37,6 +38,47 @@ fn panc_reaches_high_accuracy_on_synthetic_separable_data() {
     }
 
     assert!(correct as f64 / samples.len() as f64 >= 0.95);
+}
+
+#[test]
+fn pann_reaches_high_accuracy_on_synthetic_image_patterns() {
+    let dataset = synthetic_image_dataset(ImageVectorConfig::new(12, 12), 12, 123).unwrap();
+    let targets = dataset
+        .labels
+        .iter()
+        .map(|label| one_hot(*label, dataset.class_names.len()))
+        .collect::<Vec<_>>();
+    let mut model =
+        PannModel::with_unit_ranges(12 * 12, 4, dataset.class_names.len(), Distributor::HardBin)
+            .unwrap();
+
+    for _ in 0..4 {
+        model
+            .train_epoch_difference(&dataset.samples, &targets)
+            .unwrap();
+    }
+
+    assert!(model.accuracy(&dataset.samples, &dataset.labels).unwrap() >= 0.95);
+}
+
+#[test]
+fn panc_reaches_high_accuracy_on_synthetic_image_patterns() {
+    let dataset = synthetic_image_dataset(ImageVectorConfig::new(12, 12), 12, 321).unwrap();
+    let mut comparator = PancComparator::new(SimilarityMetric::Euclidean);
+    for (sample, label) in dataset.samples.iter().zip(&dataset.labels) {
+        comparator
+            .add_reference(sample.clone(), *label, ())
+            .unwrap();
+    }
+
+    let mut correct = 0usize;
+    for (sample, label) in dataset.samples.iter().zip(&dataset.labels) {
+        if comparator.predict_label(sample, 3).unwrap() == Some(*label) {
+            correct += 1;
+        }
+    }
+
+    assert!(correct as f64 / dataset.samples.len() as f64 >= 0.95);
 }
 
 fn synthetic_samples() -> Vec<Vec<f64>> {
