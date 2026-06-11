@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
-use image::imageops::FilterType;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -10,11 +10,14 @@ use thiserror::Error;
 
 use crate::preprocess::Dataset;
 
+mod features;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImageVectorConfig {
     pub width: u32,
     pub height: u32,
     pub invert: bool,
+    pub feature_mode: ImageFeatureMode,
 }
 
 impl ImageVectorConfig {
@@ -23,11 +26,61 @@ impl ImageVectorConfig {
             width,
             height,
             invert: false,
+            feature_mode: ImageFeatureMode::Pixels,
         }
     }
 
     pub const fn pixel_count(self) -> usize {
         (self.width * self.height) as usize
+    }
+
+    pub const fn with_feature_mode(mut self, feature_mode: ImageFeatureMode) -> Self {
+        self.feature_mode = feature_mode;
+        self
+    }
+
+    pub const fn vector_len(self) -> usize {
+        match self.feature_mode {
+            ImageFeatureMode::Pixels => self.pixel_count(),
+            ImageFeatureMode::ColorHistogram => features::COLOR_HISTOGRAM_LEN,
+            ImageFeatureMode::Hog => features::HOG_LEN,
+            ImageFeatureMode::Combined => features::COMBINED_LEN,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFeatureMode {
+    Pixels,
+    ColorHistogram,
+    Hog,
+    Combined,
+}
+
+impl ImageFeatureMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pixels => "pixels",
+            Self::ColorHistogram => "color",
+            Self::Hog => "hog",
+            Self::Combined => "combined",
+        }
+    }
+}
+
+impl FromStr for ImageFeatureMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "pixels" | "raw" => Ok(Self::Pixels),
+            "color" | "histogram" | "color-histogram" => Ok(Self::ColorHistogram),
+            "hog" | "edges" => Ok(Self::Hog),
+            "combined" => Ok(Self::Combined),
+            other => Err(format!(
+                "invalid image feature mode {other:?}; expected pixels, color, hog, or combined"
+            )),
+        }
     }
 }
 
@@ -63,7 +116,7 @@ pub fn load_image_as_vector(
         path: path.to_path_buf(),
         source,
     })?;
-    Ok(image_to_vector(image, config))
+    Ok(features::image_to_vector(image, config))
 }
 
 pub fn load_image_folder(
@@ -99,10 +152,8 @@ pub fn load_image_folder(
     let mut labels = Vec::new();
     let mut class_names = Vec::new();
 
-    for (label, class_dir) in class_dirs.into_iter().enumerate() {
+    for class_dir in class_dirs {
         let class_name = class_dir.file_name().to_string_lossy().to_string();
-        class_names.push(class_name.clone());
-
         let mut image_files = fs::read_dir(class_dir.path())
             .map_err(|source| VisionError::ReadDir {
                 path: class_dir.path(),
@@ -117,7 +168,12 @@ pub fn load_image_folder(
             .filter(|entry| supported_image_path(&entry.path()))
             .collect::<Vec<_>>();
         image_files.sort_by_key(|entry| entry.file_name());
+        if image_files.is_empty() {
+            continue;
+        }
 
+        let label = class_names.len();
+        let sample_count_before = samples.len();
         let mut skipped_images = 0usize;
         for image_file in image_files {
             match load_image_as_vector(image_file.path(), config) {
@@ -128,6 +184,10 @@ pub fn load_image_folder(
                 Err(VisionError::DecodeImage { .. }) => skipped_images += 1,
                 Err(error) => return Err(error),
             }
+        }
+
+        if samples.len() > sample_count_before {
+            class_names.push(class_name.clone());
         }
 
         if skipped_images > 0 {
@@ -187,19 +247,6 @@ pub fn class_counts(dataset: &Dataset) -> HashMap<String, usize> {
     counts
 }
 
-fn image_to_vector(image: image::DynamicImage, config: ImageVectorConfig) -> Vec<f64> {
-    let grayscale = image
-        .resize_exact(config.width, config.height, FilterType::Triangle)
-        .to_luma8();
-    grayscale
-        .pixels()
-        .map(|pixel| {
-            let value = f64::from(pixel.0[0]) / 255.0;
-            if config.invert { 1.0 - value } else { value }
-        })
-        .collect()
-}
-
 fn synthetic_pattern(label: usize, config: ImageVectorConfig, rng: &mut ChaCha8Rng) -> Vec<f64> {
     let width = config.width as usize;
     let height = config.height as usize;
@@ -230,7 +277,7 @@ fn synthetic_pattern(label: usize, config: ImageVectorConfig, rng: &mut ChaCha8R
         }
     }
 
-    values
+    features::vectorize_grayscale_values(&values, config)
 }
 
 fn centered_jitter(size: usize, rng: &mut ChaCha8Rng) -> usize {
@@ -284,8 +331,17 @@ mod tests {
             dataset
                 .samples
                 .iter()
-                .all(|sample| sample.len() == config.pixel_count())
+                .all(|sample| sample.len() == config.vector_len())
         );
+    }
+
+    #[test]
+    fn combined_feature_mode_has_expected_length() {
+        let config = ImageVectorConfig::new(8, 8).with_feature_mode(ImageFeatureMode::Combined);
+        let dataset = synthetic_image_dataset(config, 1, 9).unwrap();
+
+        assert_eq!(dataset.samples[0].len(), config.vector_len());
+        assert_eq!(config.vector_len(), 184);
     }
 
     #[test]
@@ -311,13 +367,16 @@ mod tests {
         ));
         let dark_dir = root.join("dark");
         let light_dir = root.join("light");
+        let eval_dir = root.join("eval").join("dark");
         fs::create_dir_all(&dark_dir).unwrap();
         fs::create_dir_all(&light_dir).unwrap();
+        fs::create_dir_all(&eval_dir).unwrap();
 
         let dark = GrayImage::from_pixel(4, 4, Luma([0]));
         let light = GrayImage::from_pixel(4, 4, Luma([255]));
         dark.save(dark_dir.join("sample.png")).unwrap();
         light.save(light_dir.join("sample.png")).unwrap();
+        dark.save(eval_dir.join("sample.png")).unwrap();
 
         let dataset = load_image_folder(&root, ImageVectorConfig::new(2, 2)).unwrap();
 

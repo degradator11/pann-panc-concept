@@ -157,19 +157,45 @@ my-images\
 Run PANN or PANC-like recognition over that folder:
 
 ```powershell
-cargo run --bin research-bench -- pann-image-folder --data C:\path\to\my-images --image-size 32 --epochs 20 --intervals 8
-cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images --image-size 32
+cargo run --bin research-bench -- pann-image-folder --data C:\path\to\my-images --image-size 32 --epochs 20 --intervals 8 --image-features combined
+cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images --image-size 32 --image-features combined
 ```
 
 Supported image formats are PNG and JPEG. Images are resized to the configured
-size and converted to grayscale.
+size, then vectorized. `--image-features pixels` uses raw grayscale pixels.
+`--image-features combined` uses a smaller handcrafted vector with color
+histograms, spatial intensity statistics, and HOG-like edge buckets. The
+additional `color` and `hog` modes are available for ablation runs.
 
 ## Real Image Datasets
 
 The image-folder benchmark works with any classification dataset arranged as
-one directory per class. The benchmark uses a deterministic 80/20 split: it
+one directory per class. By default it uses a deterministic 80/20 split: it
 trains on 80% of the images and reports accuracy on both the training portion
 and the held-out 20% evaluation portion.
+
+You can also provide an explicit evaluation folder with `--eval-data`. In that
+mode, `--data` is used for training and `--eval-data` is used for evaluation.
+Class labels are matched by directory name:
+
+```text
+C:\datasets\PetImagesShort\
+  Cat\
+  Dog\
+  Eval\
+    Cat\
+    Dog\
+```
+
+Use:
+
+```powershell
+cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
+cargo run --release --bin research-bench -- panc-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 32 --image-features combined --format json
+```
+
+Nested directories that do not contain images directly, such as `Eval`, are not
+treated as training classes.
 
 Good starter datasets:
 
@@ -195,13 +221,13 @@ C:\datasets\PetImages\
 Train and evaluate PANN:
 
 ```powershell
-cargo run --bin research-bench -- pann-image-folder --data C:\datasets\PetImages --image-size 32 --epochs 12 --intervals 8 --format json
+cargo run --bin research-bench -- pann-image-folder --data C:\datasets\PetImages --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
 ```
 
 Evaluate the PANC-like comparator:
 
 ```powershell
-cargo run --bin research-bench -- panc-image-folder --data C:\datasets\PetImages --image-size 32 --format json
+cargo run --bin research-bench -- panc-image-folder --data C:\datasets\PetImages --image-size 32 --image-features combined --format json
 ```
 
 ### Apples Or Fruits
@@ -220,13 +246,13 @@ C:\datasets\fruits-360\Training\
 Train and evaluate PANN:
 
 ```powershell
-cargo run --bin research-bench -- pann-image-folder --data "C:\datasets\fruits-360\Training" --image-size 32 --epochs 12 --intervals 8 --format json
+cargo run --bin research-bench -- pann-image-folder --data "C:\datasets\fruits-360\Training" --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
 ```
 
 Evaluate the PANC-like comparator:
 
 ```powershell
-cargo run --bin research-bench -- panc-image-folder --data "C:\datasets\fruits-360\Training" --image-size 32 --format json
+cargo run --bin research-bench -- panc-image-folder --data "C:\datasets\fruits-360\Training" --image-size 32 --image-features combined --format json
 ```
 
 To train a smaller apple-vs-other experiment, create a compact folder such as:
@@ -243,7 +269,7 @@ C:\datasets\apple-binary\
 Then run:
 
 ```powershell
-cargo run --bin research-bench -- pann-image-folder --data C:\datasets\apple-binary --image-size 32 --epochs 12 --intervals 8
+cargo run --bin research-bench -- pann-image-folder --data C:\datasets\apple-binary --image-size 32 --epochs 12 --intervals 8 --image-features combined
 ```
 
 ### Reading The Metrics
@@ -256,6 +282,7 @@ test_accuracy     accuracy on the held-out evaluation split
 train_ms          training/indexing time
 inference_ms      evaluation time
 memory_bytes      approximate model/reference memory
+image_features    image vectorization mode, or none for non-image datasets
 ```
 
 For PANN, `epochs` and `interval_count` affect training directly. For PANC-like

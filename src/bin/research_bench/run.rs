@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::time::Instant;
 
 use progress_ai::panc::{PancComparator, SimilarityMetric};
 use progress_ai::pann::{CorrectionMode, Distributor, IntervalStrategy, PannConfig, PannModel};
 use progress_ai::preprocess::{
-    Dataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split,
+    Dataset, SplitDataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split,
 };
 use progress_ai::vision::{load_image_folder, synthetic_image_dataset};
 
@@ -49,7 +50,7 @@ fn run_pann(
     dataset_name: &str,
     args: &Args,
 ) -> Result<BenchMetrics, Box<dyn Error>> {
-    let split = train_test_split(&dataset.samples, &dataset.labels, 0.2, args.seed);
+    let split = evaluation_split(&dataset, dataset_name, args)?;
     let ranges = min_max_ranges(&split.train_samples);
     let train_samples = min_max_scale(&split.train_samples, &ranges);
     let test_samples = min_max_scale(&split.test_samples, &ranges);
@@ -76,6 +77,7 @@ fn run_pann(
     Ok(BenchMetrics {
         model: "pann".to_string(),
         dataset: dataset_name.to_string(),
+        image_features: metrics_image_features(dataset_name, args),
         train_accuracy,
         test_accuracy,
         train_ms,
@@ -93,7 +95,7 @@ fn run_panc(
     dataset_name: &str,
     args: &Args,
 ) -> Result<BenchMetrics, Box<dyn Error>> {
-    let split = train_test_split(&dataset.samples, &dataset.labels, 0.2, args.seed);
+    let split = evaluation_split(&dataset, dataset_name, args)?;
     let ranges = min_max_ranges(&split.train_samples);
     let train_samples = min_max_scale(&split.train_samples, &ranges);
     let test_samples = min_max_scale(&split.test_samples, &ranges);
@@ -113,6 +115,7 @@ fn run_panc(
     Ok(BenchMetrics {
         model: "panc_like".to_string(),
         dataset: dataset_name.to_string(),
+        image_features: metrics_image_features(dataset_name, args),
         train_accuracy,
         test_accuracy,
         train_ms,
@@ -123,6 +126,72 @@ fn run_panc(
         distributor: "none".to_string(),
         correction_mode: "top_k_euclidean_vote".to_string(),
     })
+}
+
+fn evaluation_split(
+    dataset: &Dataset,
+    dataset_name: &str,
+    args: &Args,
+) -> Result<SplitDataset, Box<dyn Error>> {
+    let Some(eval_path) = args.eval_data_path.as_deref() else {
+        return Ok(train_test_split(
+            &dataset.samples,
+            &dataset.labels,
+            0.2,
+            args.seed,
+        ));
+    };
+
+    if dataset_name != "image-folder" {
+        return Err("--eval-data is only supported by image-folder benchmarks".into());
+    }
+
+    let eval_dataset = load_image_folder(eval_path, image_config(args))?;
+    let train = train_test_split(&dataset.samples, &dataset.labels, 0.0, args.seed);
+    let test_labels = remap_labels_by_class_name(&eval_dataset, &dataset.class_names)?;
+    Ok(SplitDataset {
+        train_samples: train.train_samples,
+        train_labels: train.train_labels,
+        test_samples: eval_dataset.samples,
+        test_labels,
+    })
+}
+
+fn remap_labels_by_class_name(
+    source: &Dataset,
+    target_class_names: &[String],
+) -> Result<Vec<usize>, Box<dyn Error>> {
+    let target_labels = target_class_names
+        .iter()
+        .enumerate()
+        .map(|(label, name)| (name.as_str(), label))
+        .collect::<HashMap<_, _>>();
+
+    source
+        .labels
+        .iter()
+        .map(|label| {
+            let class_name = source
+                .class_names
+                .get(*label)
+                .ok_or_else(|| format!("missing source class name for label {label}"))?;
+            target_labels
+                .get(class_name.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    format!("eval class {class_name:?} does not exist in training classes")
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Into::into)
+}
+
+fn metrics_image_features(dataset_name: &str, args: &Args) -> String {
+    if dataset_name.starts_with("image") {
+        args.image_features.as_str().to_string()
+    } else {
+        "none".to_string()
+    }
 }
 
 fn panc_accuracy(

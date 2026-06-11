@@ -8,6 +8,7 @@ use super::OutputFormat;
 pub struct BenchMetrics {
     pub model: String,
     pub dataset: String,
+    pub image_features: String,
     pub train_accuracy: f64,
     pub test_accuracy: f64,
     pub train_ms: u128,

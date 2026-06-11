@@ -1,18 +1,20 @@
 use std::env;
 use std::error::Error;
 
-use progress_ai::vision::ImageVectorConfig;
+use progress_ai::vision::{ImageFeatureMode, ImageVectorConfig};
 
 #[derive(Debug)]
 pub struct Args {
     pub command: String,
     pub format: OutputFormat,
     pub data_path: Option<String>,
+    pub eval_data_path: Option<String>,
     pub epochs: usize,
     pub intervals: usize,
     pub seed: u64,
     pub image_width: u32,
     pub image_height: u32,
+    pub image_features: ImageFeatureMode,
     pub samples_per_class: usize,
 }
 
@@ -25,18 +27,20 @@ pub enum OutputFormat {
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut raw = env::args().skip(1);
     let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder> [--format json|csv] [--data path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--samples-per-class n]",
+        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder> [--format json|csv] [--data path] [--eval-data path] [--epochs n] [--intervals n] [--seed n] [--image-size n] [--image-features pixels|color|hog|combined] [--samples-per-class n]",
     )?;
 
     let mut args = Args {
         command,
         format: OutputFormat::Json,
         data_path: None,
+        eval_data_path: None,
         epochs: 12,
         intervals: 8,
         seed: 42,
         image_width: 16,
         image_height: 16,
+        image_features: ImageFeatureMode::Pixels,
         samples_per_class: 80,
     };
 
@@ -49,7 +53,10 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     other => return Err(format!("invalid --format value: {other:?}").into()),
                 };
             }
-            "--data" => args.data_path = raw.next(),
+            "--data" => args.data_path = Some(raw.next().ok_or("--data requires a value")?),
+            "--eval-data" => {
+                args.eval_data_path = Some(raw.next().ok_or("--eval-data requires a value")?);
+            }
             "--epochs" => {
                 args.epochs = raw
                     .next()
@@ -88,6 +95,12 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
                     .ok_or("--image-height requires a value")?
                     .parse::<u32>()?;
             }
+            "--image-features" => {
+                args.image_features = raw
+                    .next()
+                    .ok_or("--image-features requires a value")?
+                    .parse::<ImageFeatureMode>()?;
+            }
             "--samples-per-class" => {
                 args.samples_per_class = raw
                     .next()
@@ -103,6 +116,7 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
 
 pub fn image_config(args: &Args) -> ImageVectorConfig {
     ImageVectorConfig::new(args.image_width, args.image_height)
+        .with_feature_mode(args.image_features)
 }
 
 pub fn required_data_path(args: &Args) -> Result<&str, Box<dyn Error>> {

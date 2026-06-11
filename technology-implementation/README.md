@@ -49,7 +49,17 @@ dataset-root/
 ```
 
 The benchmark performs a deterministic 80/20 train/evaluation split and reports
-both `train_accuracy` and `test_accuracy`.
+both `train_accuracy` and `test_accuracy`. For image folders, it can also train
+from one folder and evaluate against another folder with matching class names:
+
+```powershell
+cargo run --release --bin research-bench -- pann-image-folder --data C:\datasets\PetImagesShort --eval-data C:\datasets\PetImagesShort\Eval --image-size 32 --epochs 12 --intervals 8 --image-features combined --format json
+```
+
+Image benchmarks support `--image-features pixels`, `color`, `hog`, and
+`combined`. The `combined` mode is the current recommended classical baseline
+because it adds color histograms, coarse intensity layout, and HOG-like edge
+features before PANN/PANC processing.
 
 ## Legal boundary
 
