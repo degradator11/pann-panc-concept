@@ -28,6 +28,36 @@ The same general approach struggles when the object is mixed with people,
 backgrounds, scale changes, multiple animals, or bad crops, but works well when
 the image artifact mostly contains the object to recognize.
 
+## Current Timing Evidence
+
+The Fruits-small benchmark used 7,690 training images and 2,564 evaluation
+images across 14 classes.
+
+PANC-like timing:
+
+- library build time: 34 ms;
+- evaluation classification time: 21,408 ms;
+- approximate classification time per eval image: 8.35 ms;
+- memory estimate: 62,996,480 bytes.
+
+PANN timing:
+
+- 5-epoch training time: 2,572 ms;
+- evaluation classification time: 78 ms;
+- approximate classification time per eval image: 0.03 ms;
+- memory estimate: 1,376,256 bytes.
+
+Interpretation:
+
+- PANC "learning" is almost instant because it stores analogue vectors rather
+  than fitting weights. In this implementation, the cost moves to inference:
+  every query is compared against stored references.
+- PANN learns more slowly because it trains interval-coded weights, but once
+  trained it classifies very quickly.
+- This does not yet reproduce Progress.ai's claimed PANC speed. Our PANC-like
+  comparator is still a direct nearest-neighbor scan, not a compact BCF/hardware
+  comparator or indexed similarity engine.
+
 ## What This Means
 
 The current PANC-like code is close to known families of methods:
