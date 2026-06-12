@@ -1,0 +1,20 @@
+name: pann-panc
+
+services:
+  research-bench:
+    build:
+      context: ..
+      dockerfile: docker-pann-panc/Dockerfile
+    image: pann-panc-research:latest
+    volumes:
+      - type: bind
+        source: ${TRAIN_DATA:-../pann-panc/data}
+        target: /data
+        read_only: true
+      - type: bind
+        source: ${MODELS_DIR:-../pann-panc/models}
+        target: /models
+      - type: bind
+        source: ${REPORTS_DIR:-../pann-panc/reports}
+        target: /reports
+    working_dir: /work
