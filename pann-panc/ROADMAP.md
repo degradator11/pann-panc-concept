@@ -112,6 +112,41 @@ mechanics closely; PANC remains a PANC-like comparator baseline plus search
 tooling because public sources do not disclose the exact binary comparison
 format or similarity coefficient.
 
+## Current Architecture Direction
+
+Use standalone local routines until the full image pipeline is proven:
+
+```text
+raw class-folder images
+-> optional cropper/background-normalizer routine
+-> cropped class-folder images
+-> pann-panc train/eval/predict routines
+-> JSON model/report/debug artifacts
+```
+
+Do not maintain Docker/container packaging as an active path yet. Containers are
+a future deployment shape for stable workers, not the current research loop.
+
+Near-term architecture work:
+
+- define a common cropper output contract: cropped class folders plus
+  `detections.json`/`crop_manifest.jsonl`
+- implement cheap standalone croppers first, likely OpenCV foreground crop and
+  YOLO box crop
+- keep background removal optional: `keep`, `solid gray`, `blur`, or mask-based
+  modes
+- benchmark raw images versus cropped/normalized images before adding service
+  orchestration
+
+Future production shape, after the local pipeline works:
+
+```text
+API/job runner
+-> cropper worker, possibly GPU
+-> PANN/PANC trainer/evaluator/predictor worker
+-> artifact storage and reports
+```
+
 ## Latest PANC-Like Genetic Search Snapshot
 
 The first genetic-search implementation is in place as

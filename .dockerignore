@@ -1,9 +1,0 @@
-.git
-target
-models
-reports
-pann-panc/target
-pann-panc/models
-pann-panc/reports
-**/*.local.bat
-**/.DS_Store

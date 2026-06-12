@@ -1,11 +1,21 @@
 # PANN/PANC Workspace
 
-This repository is now split into a small production-style layout:
+This repository is split into a simple local-development layout:
 
 - `pann-panc/` - Rust PANN/PANC research application and documentation.
-- `docker-pann-panc/` - Docker image and Compose wrapper for container runs.
 - `.git/` - repository metadata, intentionally kept at this root level.
 - `push-with-token.local.bat` - local push helper, intentionally kept at this root level and ignored by git.
+
+The current direction is **standalone local routines first**:
+
+```text
+class-folder images -> train/eval/predict commands -> JSON model/report artifacts
+```
+
+We are intentionally not maintaining Docker packaging right now. The next
+research step is to prove the cropper/classifier pipeline locally. Once the
+pipeline works well enough, we can package the proven routines into
+containerized workers for deployment.
 
 ## Run Locally
 
@@ -15,27 +25,18 @@ cargo test
 cargo run --release --bin research-bench -- pann-iris --format json
 ```
 
-## Run With Docker
-
-Build the image:
+Train an image-folder model:
 
 ```powershell
-docker-compose -f docker-pann-panc\docker-compose.yml build
+cd pann-panc
+cargo run --release --bin research-bench -- train-pann-image-folder --data C:\path\to\train --out models\model.json --report-out reports\train-report.json --image-size 64 --image-features rich-texture --image-resize center-crop --epochs 12 --intervals 8 --format json
 ```
 
-Run the bundled Iris smoke benchmark:
+Evaluate that model:
 
 ```powershell
-docker-compose -f docker-pann-panc\docker-compose.yml run --rm research-bench
+cd pann-panc
+cargo run --release --bin research-bench -- eval-pann --model models\model.json --data C:\path\to\eval --report-out reports\eval-report.json --format json
 ```
-
-Mount a local image-folder dataset and train a model:
-
-```powershell
-$env:TRAIN_DATA="C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_short"
-docker-compose -f docker-pann-panc\docker-compose.yml run --rm research-bench train-pann-image-folder --data /data --out /models/cats-dogs-pann.json --report-out /reports/cats-dogs-pann-train.json --image-size 64 --image-features rich-texture --image-resize center-crop --epochs 12 --intervals 8 --format json
-```
-
-Outputs are written to `pann-panc/models/` and `pann-panc/reports/` by default.
 
 See `pann-panc/README.md` for full model/search/report artifact details.
