@@ -1,0 +1,12 @@
+{
+  "command": "pann-image-folder",
+  "data": "C:/Users/vilex/Downloads/fruits-small/test",
+  "eval_data": "C:/Users/vilex/Downloads/fruits-small/eval",
+  "format": "json",
+  "image_size": 32,
+  "image_features": "pixels",
+  "image_resize": "stretch",
+  "epochs": 5,
+  "intervals": 8,
+  "top_k": 3
+}

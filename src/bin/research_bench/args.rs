@@ -4,6 +4,11 @@ use std::error::Error;
 use progress_ai::pann::CorrectionMode;
 use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, ImageVectorConfig};
 
+use super::config::{
+    ConfigReport, ConfigSource, SourceMap, apply_config, build_config_report, default_sources,
+    find_config_path, load_config, set_source, skip_config_flag,
+};
+
 #[derive(Debug, Clone)]
 pub struct Args {
     pub command: String,
@@ -49,6 +54,7 @@ pub struct Args {
     pub evolution_top_k_values: Vec<usize>,
     pub evolution_memory_penalty_per_mb: f64,
     pub evolution_inference_penalty_per_ms: f64,
+    pub config_report: Option<ConfigReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,13 +87,55 @@ impl DebugSamples {
     }
 }
 
-pub fn parse_args() -> Result<Args, Box<dyn Error>> {
-    let mut raw = env::args().skip(1);
-    let command = raw.next().ok_or(
-        "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder> [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]",
-    )?;
+const USAGE: &str = "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder> [--config path|--config.location=path] [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]";
 
-    let mut args = Args {
+pub fn parse_args() -> Result<Args, Box<dyn Error>> {
+    parse_args_from(env::args().skip(1))
+}
+
+pub fn parse_args_from<I, S>(raw: I) -> Result<Args, Box<dyn Error>>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let raw = raw.into_iter().map(Into::into).collect::<Vec<_>>();
+    let config_path = find_config_path(&raw)?;
+    let config = config_path.as_deref().map(load_config).transpose()?;
+    let positional_command = raw
+        .first()
+        .filter(|value| !value.starts_with("--"))
+        .cloned();
+    let command = positional_command
+        .clone()
+        .or_else(|| config.as_ref().and_then(|config| config.command.clone()))
+        .ok_or(USAGE)?;
+
+    let mut args = default_args(command);
+    let mut sources = default_sources();
+    if positional_command.is_some() {
+        set_source(&mut sources, "command", ConfigSource::Cli);
+    } else if config
+        .as_ref()
+        .and_then(|config| config.command.as_ref())
+        .is_some()
+    {
+        set_source(&mut sources, "command", ConfigSource::Config);
+    }
+
+    if let Some(config) = config.as_ref() {
+        apply_config(&mut args, config, &mut sources)?;
+    }
+    apply_cli_flags(&mut args, &raw, positional_command.is_some(), &mut sources)?;
+
+    if let Some(path) = config_path {
+        args.config_report = Some(build_config_report(path, &args, &sources));
+    }
+
+    Ok(args)
+}
+
+fn default_args(command: String) -> Args {
+    Args {
         command,
         format: OutputFormat::Json,
         data_path: None,
@@ -131,233 +179,231 @@ pub fn parse_args() -> Result<Args, Box<dyn Error>> {
         evolution_top_k_values: Vec::new(),
         evolution_memory_penalty_per_mb: 0.0001,
         evolution_inference_penalty_per_ms: 0.00001,
-    };
+        config_report: None,
+    }
+}
 
-    while let Some(flag) = raw.next() {
-        match flag.as_str() {
+fn apply_cli_flags(
+    args: &mut Args,
+    raw: &[String],
+    has_positional_command: bool,
+    sources: &mut SourceMap,
+) -> Result<(), Box<dyn Error>> {
+    let mut index = usize::from(has_positional_command);
+    while index < raw.len() {
+        let flag = raw[index].as_str();
+        if skip_config_flag(raw, &mut index) {
+            continue;
+        }
+        match flag {
             "--format" => {
-                args.format = match raw.next().as_deref() {
-                    Some("json") => OutputFormat::Json,
-                    Some("csv") => OutputFormat::Csv,
-                    other => return Err(format!("invalid --format value: {other:?}").into()),
-                };
+                args.format = parse_format(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "format", ConfigSource::Cli);
             }
-            "--data" => args.data_path = Some(raw.next().ok_or("--data requires a value")?),
+            "--data" => {
+                args.data_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "data_path", ConfigSource::Cli);
+            }
             "--eval-data" => {
-                args.eval_data_path = Some(raw.next().ok_or("--eval-data requires a value")?);
+                args.eval_data_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "eval_data_path", ConfigSource::Cli);
             }
-            "--out" => args.out_path = Some(raw.next().ok_or("--out requires a value")?),
-            "--model" => args.model_path = Some(raw.next().ok_or("--model requires a value")?),
-            "--image" => args.image_path = Some(raw.next().ok_or("--image requires a value")?),
+            "--out" => {
+                args.out_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "out_path", ConfigSource::Cli);
+            }
+            "--model" => {
+                args.model_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "model_path", ConfigSource::Cli);
+            }
+            "--image" => {
+                args.image_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "image_path", ConfigSource::Cli);
+            }
             "--epochs" => {
-                args.epochs = raw
-                    .next()
-                    .ok_or("--epochs requires a value")?
-                    .parse::<usize>()?;
+                args.epochs = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "epochs", ConfigSource::Cli);
             }
             "--intervals" => {
-                args.intervals = raw
-                    .next()
-                    .ok_or("--intervals requires a value")?
-                    .parse::<usize>()?;
+                args.intervals = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "intervals", ConfigSource::Cli);
             }
             "--correction-mode" => {
-                args.correction_mode = parse_correction_mode(
-                    &raw.next().ok_or("--correction-mode requires a value")?,
-                )?;
+                args.correction_mode = parse_correction_mode(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "correction_mode", ConfigSource::Cli);
             }
             "--seed" => {
-                args.seed = raw
-                    .next()
-                    .ok_or("--seed requires a value")?
-                    .parse::<u64>()?;
+                args.seed = next_value(raw, &mut index, flag)?.parse::<u64>()?;
+                set_source(sources, "seed", ConfigSource::Cli);
             }
             "--image-size" => {
-                let size = raw
-                    .next()
-                    .ok_or("--image-size requires a value")?
-                    .parse::<u32>()?;
+                let size = next_value(raw, &mut index, flag)?.parse::<u32>()?;
                 args.image_width = size;
                 args.image_height = size;
+                set_source(sources, "image_width", ConfigSource::Cli);
+                set_source(sources, "image_height", ConfigSource::Cli);
             }
             "--image-width" => {
-                args.image_width = raw
-                    .next()
-                    .ok_or("--image-width requires a value")?
-                    .parse::<u32>()?;
+                args.image_width = next_value(raw, &mut index, flag)?.parse::<u32>()?;
+                set_source(sources, "image_width", ConfigSource::Cli);
             }
             "--image-height" => {
-                args.image_height = raw
-                    .next()
-                    .ok_or("--image-height requires a value")?
-                    .parse::<u32>()?;
+                args.image_height = next_value(raw, &mut index, flag)?.parse::<u32>()?;
+                set_source(sources, "image_height", ConfigSource::Cli);
             }
             "--image-features" => {
-                args.image_features = raw
-                    .next()
-                    .ok_or("--image-features requires a value")?
-                    .parse::<ImageFeatureMode>()?;
+                args.image_features =
+                    next_value(raw, &mut index, flag)?.parse::<ImageFeatureMode>()?;
+                set_source(sources, "image_features", ConfigSource::Cli);
             }
             "--image-resize" => {
-                args.image_resize = raw
-                    .next()
-                    .ok_or("--image-resize requires a value")?
-                    .parse::<ImageResizeMode>()?;
+                args.image_resize =
+                    next_value(raw, &mut index, flag)?.parse::<ImageResizeMode>()?;
+                set_source(sources, "image_resize", ConfigSource::Cli);
             }
             "--samples-per-class" => {
-                args.samples_per_class = raw
-                    .next()
-                    .ok_or("--samples-per-class requires a value")?
-                    .parse::<usize>()?;
+                args.samples_per_class = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "samples_per_class", ConfigSource::Cli);
             }
             "--top-k" => {
-                args.top_k = raw
-                    .next()
-                    .ok_or("--top-k requires a value")?
-                    .parse::<usize>()?;
+                args.top_k = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "top_k", ConfigSource::Cli);
             }
             "--target-mse" => {
-                args.target_mse = Some(
-                    raw.next()
-                        .ok_or("--target-mse requires a value")?
-                        .parse::<f64>()?,
-                );
+                args.target_mse = Some(next_value(raw, &mut index, flag)?.parse::<f64>()?);
+                set_source(sources, "target_mse", ConfigSource::Cli);
             }
             "--matrix-models" => {
-                args.matrix_models =
-                    parse_matrix_models(&raw.next().ok_or("--matrix-models requires a value")?)?;
+                args.matrix_models = parse_matrix_models(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "matrix_models", ConfigSource::Cli);
             }
             "--matrix-features" => {
-                args.matrix_features = parse_image_features_list(
-                    &raw.next().ok_or("--matrix-features requires a value")?,
-                )?;
+                args.matrix_features =
+                    parse_image_features_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "matrix_features", ConfigSource::Cli);
             }
             "--matrix-image-sizes" => {
-                args.matrix_image_sizes =
-                    parse_number_list(&raw.next().ok_or("--matrix-image-sizes requires a value")?)?;
+                args.matrix_image_sizes = parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "matrix_image_sizes", ConfigSource::Cli);
             }
             "--matrix-intervals" => {
-                args.matrix_intervals =
-                    parse_number_list(&raw.next().ok_or("--matrix-intervals requires a value")?)?;
+                args.matrix_intervals = parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "matrix_intervals", ConfigSource::Cli);
             }
             "--matrix-seeds" => {
-                args.matrix_seeds =
-                    parse_number_list(&raw.next().ok_or("--matrix-seeds requires a value")?)?;
+                args.matrix_seeds = parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "matrix_seeds", ConfigSource::Cli);
             }
             "--matrix-resize-modes" => {
-                args.matrix_resize_modes = parse_image_resize_modes_list(
-                    &raw.next().ok_or("--matrix-resize-modes requires a value")?,
-                )?;
+                args.matrix_resize_modes =
+                    parse_image_resize_modes_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "matrix_resize_modes", ConfigSource::Cli);
             }
             "--matrix-correction-modes" => {
-                args.matrix_correction_modes = parse_correction_modes_list(
-                    &raw.next()
-                        .ok_or("--matrix-correction-modes requires a value")?,
-                )?;
+                args.matrix_correction_modes =
+                    parse_correction_modes_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "matrix_correction_modes", ConfigSource::Cli);
             }
             "--matrix-top" => {
-                args.matrix_top = raw
-                    .next()
-                    .ok_or("--matrix-top requires a value")?
-                    .parse::<usize>()?;
+                args.matrix_top = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "matrix_top", ConfigSource::Cli);
             }
             "--debug" | "--debug-out" => {
-                args.debug_out_path = Some(raw.next().ok_or("--debug-out requires a value")?);
+                args.debug_out_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "debug_out_path", ConfigSource::Cli);
             }
             "--debug-train-data" => {
-                args.debug_train_data_path =
-                    Some(raw.next().ok_or("--debug-train-data requires a value")?);
+                args.debug_train_data_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "debug_train_data_path", ConfigSource::Cli);
             }
             "--debug-limit" => {
-                args.debug_limit = raw
-                    .next()
-                    .ok_or("--debug-limit requires a value")?
-                    .parse::<usize>()?;
+                args.debug_limit = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "debug_limit", ConfigSource::Cli);
             }
             "--debug-samples" => {
-                args.debug_samples =
-                    parse_debug_samples(&raw.next().ok_or("--debug-samples requires a value")?)?;
+                args.debug_samples = parse_debug_samples(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "debug_samples", ConfigSource::Cli);
             }
             "--debug-neighbors" => {
-                args.debug_neighbors = raw
-                    .next()
-                    .ok_or("--debug-neighbors requires a value")?
-                    .parse::<usize>()?;
+                args.debug_neighbors = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "debug_neighbors", ConfigSource::Cli);
             }
             "--population" => {
-                args.evolution_population = raw
-                    .next()
-                    .ok_or("--population requires a value")?
-                    .parse::<usize>()?;
+                args.evolution_population = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "evolution_population", ConfigSource::Cli);
             }
             "--generations" => {
-                args.evolution_generations = raw
-                    .next()
-                    .ok_or("--generations requires a value")?
-                    .parse::<usize>()?;
+                args.evolution_generations = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "evolution_generations", ConfigSource::Cli);
             }
             "--elite" | "--elite-count" => {
-                args.evolution_elite_count = raw
-                    .next()
-                    .ok_or("--elite-count requires a value")?
-                    .parse::<usize>()?;
+                args.evolution_elite_count = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "evolution_elite_count", ConfigSource::Cli);
             }
             "--mutation-rate" => {
-                args.evolution_mutation_rate = raw
-                    .next()
-                    .ok_or("--mutation-rate requires a value")?
-                    .parse::<f64>()?;
+                args.evolution_mutation_rate = next_value(raw, &mut index, flag)?.parse::<f64>()?;
+                set_source(sources, "evolution_mutation_rate", ConfigSource::Cli);
             }
             "--validation-ratio" => {
-                args.evolution_validation_ratio = raw
-                    .next()
-                    .ok_or("--validation-ratio requires a value")?
-                    .parse::<f64>()?;
+                args.evolution_validation_ratio =
+                    next_value(raw, &mut index, flag)?.parse::<f64>()?;
+                set_source(sources, "evolution_validation_ratio", ConfigSource::Cli);
             }
             "--threads" => {
-                args.evolution_threads = raw
-                    .next()
-                    .ok_or("--threads requires a value")?
-                    .parse::<usize>()?;
+                args.evolution_threads = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "evolution_threads", ConfigSource::Cli);
             }
             "--evolve-features" => {
-                args.evolution_feature_modes = parse_image_features_list(
-                    &raw.next().ok_or("--evolve-features requires a value")?,
-                )?;
+                args.evolution_feature_modes =
+                    parse_image_features_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_feature_modes", ConfigSource::Cli);
             }
             "--evolve-image-sizes" => {
                 args.evolution_image_sizes =
-                    parse_number_list(&raw.next().ok_or("--evolve-image-sizes requires a value")?)?;
+                    parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_image_sizes", ConfigSource::Cli);
             }
             "--evolve-resize-modes" => {
-                args.evolution_resize_modes = parse_image_resize_modes_list(
-                    &raw.next().ok_or("--evolve-resize-modes requires a value")?,
-                )?;
+                args.evolution_resize_modes =
+                    parse_image_resize_modes_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_resize_modes", ConfigSource::Cli);
             }
             "--evolve-top-k" => {
                 args.evolution_top_k_values =
-                    parse_number_list(&raw.next().ok_or("--evolve-top-k requires a value")?)?;
+                    parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_top_k_values", ConfigSource::Cli);
             }
             "--memory-penalty-per-mb" => {
-                args.evolution_memory_penalty_per_mb = raw
-                    .next()
-                    .ok_or("--memory-penalty-per-mb requires a value")?
-                    .parse::<f64>()?;
+                args.evolution_memory_penalty_per_mb =
+                    next_value(raw, &mut index, flag)?.parse::<f64>()?;
+                set_source(
+                    sources,
+                    "evolution_memory_penalty_per_mb",
+                    ConfigSource::Cli,
+                );
             }
             "--inference-penalty-per-ms" => {
-                args.evolution_inference_penalty_per_ms = raw
-                    .next()
-                    .ok_or("--inference-penalty-per-ms requires a value")?
-                    .parse::<f64>()?;
+                args.evolution_inference_penalty_per_ms =
+                    next_value(raw, &mut index, flag)?.parse::<f64>()?;
+                set_source(
+                    sources,
+                    "evolution_inference_penalty_per_ms",
+                    ConfigSource::Cli,
+                );
+            }
+            other if other.starts_with("--config=") || other.starts_with("--config.location=") => {}
+            other if !other.starts_with("--") => {
+                return Err(format!("unexpected positional argument {other:?}").into());
             }
             other => return Err(format!("unknown option {other}").into()),
         }
+        index += 1;
     }
 
-    Ok(args)
+    Ok(())
 }
 
-fn parse_matrix_models(value: &str) -> Result<Vec<MatrixModel>, Box<dyn Error>> {
+pub(super) fn parse_matrix_models(value: &str) -> Result<Vec<MatrixModel>, Box<dyn Error>> {
     split_csv_values(value)
         .into_iter()
         .map(|model| match model {
@@ -374,28 +420,49 @@ fn parse_matrix_models(value: &str) -> Result<Vec<MatrixModel>, Box<dyn Error>> 
         .collect()
 }
 
-fn parse_image_features_list(value: &str) -> Result<Vec<ImageFeatureMode>, Box<dyn Error>> {
+pub(super) fn parse_format(value: &str) -> Result<OutputFormat, Box<dyn Error>> {
+    match value {
+        "json" => Ok(OutputFormat::Json),
+        "csv" => Ok(OutputFormat::Csv),
+        other => Err(format!("invalid --format value: {other:?}; expected json or csv").into()),
+    }
+}
+
+pub(super) fn output_format_name(format: OutputFormat) -> &'static str {
+    match format {
+        OutputFormat::Json => "json",
+        OutputFormat::Csv => "csv",
+    }
+}
+
+pub(super) fn parse_image_features_list(
+    value: &str,
+) -> Result<Vec<ImageFeatureMode>, Box<dyn Error>> {
     split_csv_values(value)
         .into_iter()
         .map(|feature| feature.parse::<ImageFeatureMode>().map_err(Into::into))
         .collect()
 }
 
-fn parse_image_resize_modes_list(value: &str) -> Result<Vec<ImageResizeMode>, Box<dyn Error>> {
+pub(super) fn parse_image_resize_modes_list(
+    value: &str,
+) -> Result<Vec<ImageResizeMode>, Box<dyn Error>> {
     split_csv_values(value)
         .into_iter()
         .map(|mode| mode.parse::<ImageResizeMode>().map_err(Into::into))
         .collect()
 }
 
-fn parse_correction_modes_list(value: &str) -> Result<Vec<CorrectionMode>, Box<dyn Error>> {
+pub(super) fn parse_correction_modes_list(
+    value: &str,
+) -> Result<Vec<CorrectionMode>, Box<dyn Error>> {
     split_csv_values(value)
         .into_iter()
         .map(parse_correction_mode)
         .collect()
 }
 
-fn parse_correction_mode(value: &str) -> Result<CorrectionMode, Box<dyn Error>> {
+pub(super) fn parse_correction_mode(value: &str) -> Result<CorrectionMode, Box<dyn Error>> {
     match value {
         "difference-ls" | "difference_ls" | "least-squares" | "least_squares"
         | "difference-least-squares" | "difference_least_squares" => {
@@ -422,7 +489,7 @@ pub const fn correction_mode_name(mode: CorrectionMode) -> &'static str {
     }
 }
 
-fn parse_debug_samples(value: &str) -> Result<DebugSamples, Box<dyn Error>> {
+pub(super) fn parse_debug_samples(value: &str) -> Result<DebugSamples, Box<dyn Error>> {
     match value {
         "misclassified" | "wrong" | "errors" => Ok(DebugSamples::Misclassified),
         "all" => Ok(DebugSamples::All),
@@ -434,7 +501,7 @@ fn parse_debug_samples(value: &str) -> Result<DebugSamples, Box<dyn Error>> {
     }
 }
 
-fn parse_number_list<T>(value: &str) -> Result<Vec<T>, Box<dyn Error>>
+pub(super) fn parse_number_list<T>(value: &str) -> Result<Vec<T>, Box<dyn Error>>
 where
     T: std::str::FromStr,
     T::Err: Error + 'static,
@@ -452,6 +519,13 @@ fn split_csv_values(value: &str) -> Vec<&str> {
         .map(str::trim)
         .filter(|part| !part.is_empty())
         .collect()
+}
+
+fn next_value(raw: &[String], index: &mut usize, flag: &str) -> Result<String, Box<dyn Error>> {
+    *index += 1;
+    raw.get(*index)
+        .cloned()
+        .ok_or_else(|| format!("{flag} requires a value").into())
 }
 
 pub fn image_config(args: &Args) -> ImageVectorConfig {

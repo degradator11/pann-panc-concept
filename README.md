@@ -172,6 +172,46 @@ cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images 
 cargo run --bin research-bench -- centroid-image-folder --data C:\path\to\my-images --image-size 64 --image-features rich
 ```
 
+Long benchmark commands can be moved into a JSON config file. Defaults are
+loaded first, the config file overrides those defaults, and explicit CLI flags
+override the config. The config report is printed to stderr so JSON/CSV output
+remains parseable.
+
+```powershell
+cargo run --release --bin research-bench -- pann-image-folder --config.location=configs\fruits-small-pann.example.json
+```
+
+You can also put the command inside the config and call only the config path:
+
+```powershell
+cargo run --release --bin research-bench -- --config.location=configs\fruits-small-pann.example.json
+```
+
+Override one value from the command line:
+
+```powershell
+cargo run --release --bin research-bench -- pann-image-folder --config.location=configs\fruits-small-pann.example.json --epochs 12
+```
+
+Config lists accept either JSON arrays or comma-separated strings:
+
+```json
+{
+  "command": "pann-image-folder",
+  "data": "C:/datasets/fruits-small/test",
+  "eval_data": "C:/datasets/fruits-small/eval",
+  "format": "json",
+  "image_size": 32,
+  "image_features": "pixels",
+  "image_resize": "stretch",
+  "epochs": 5,
+  "intervals": 8,
+  "top_k": 3,
+  "matrix_models": ["pann", "panc", "centroid"],
+  "matrix_image_sizes": [32, 64]
+}
+```
+
 Supported image formats are PNG and JPEG. Images are resized to the configured
 size, then vectorized. `--image-features pixels` uses raw grayscale pixels.
 `--image-features combined` uses a smaller handcrafted vector with color
