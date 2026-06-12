@@ -16,11 +16,11 @@ use progress_ai::vision::{
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use serde::Serialize;
 
 use super::{
     Args, CommandOutput, EvolutionGenerationRow, EvolutionReport, EvolvedPancGenomeReport,
-    classification_metrics, required_data_path, write_evolution_history_csv,
+    EvolvedPancSearchArtifact, classification_metrics, required_data_path,
+    save_evolved_search_artifact, write_evolution_history_csv,
 };
 
 pub fn run_evolve_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -99,9 +99,9 @@ pub fn run_evolve_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dy
     let artifact_path = args.out_path.clone();
     let mut history_path = None;
     if let Some(out_path) = args.out_path.as_deref() {
-        save_evolved_artifact(
+        save_evolved_search_artifact(
             out_path,
-            &EvolvedPancArtifact {
+            &EvolvedPancSearchArtifact {
                 version: 1,
                 model: "evolved_panc_like".to_string(),
                 class_names: class_names.clone(),
@@ -612,20 +612,6 @@ fn dedup_preserving_order<T: Copy + PartialEq>(values: Vec<T>) -> Vec<T> {
     deduped
 }
 
-fn save_evolved_artifact(
-    path: impl AsRef<Path>,
-    artifact: &EvolvedPancArtifact,
-) -> Result<(), Box<dyn Error>> {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, serde_json::to_string_pretty(artifact)?)?;
-    Ok(())
-}
-
 fn save_history(
     path: impl AsRef<Path>,
     rows: &[EvolutionGenerationRow],
@@ -694,23 +680,4 @@ struct FinalEval {
     accuracy: Option<f64>,
     per_class_accuracy: Vec<super::PerClassAccuracy>,
     confusion_matrix: Vec<super::ConfusionRow>,
-}
-
-#[derive(Debug, Serialize)]
-struct EvolvedPancArtifact {
-    version: u32,
-    model: String,
-    class_names: Vec<String>,
-    best_genome: EvolvedPancGenomeReport,
-    best_fitness: f64,
-    validation_accuracy: f64,
-    eval_accuracy: Option<f64>,
-    seed: u64,
-    population_size: usize,
-    generations: usize,
-    elite_count: usize,
-    mutation_rate: f64,
-    validation_ratio: f64,
-    threads: usize,
-    hardware_note: String,
 }

@@ -1,7 +1,9 @@
 use std::error::Error;
+use std::fs;
 use std::io::Write;
+use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::OutputFormat;
 
@@ -226,7 +228,7 @@ pub struct EvolutionReport {
     pub rows: Vec<EvolutionGenerationRow>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvolvedPancGenomeReport {
     pub image_size: u32,
     pub image_features: String,
@@ -428,6 +430,29 @@ pub fn write_output(output: &CommandOutput, format: OutputFormat) -> Result<(), 
             write_evolution_history_csv(std::io::stdout(), &report.rows)?;
         }
     }
+    Ok(())
+}
+
+pub fn save_output_json(
+    path: impl AsRef<Path>,
+    output: &CommandOutput,
+) -> Result<(), Box<dyn Error>> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let json = match output {
+        CommandOutput::Metrics(metrics) => serde_json::to_string_pretty(metrics)?,
+        CommandOutput::Artifact(metrics) => serde_json::to_string_pretty(metrics)?,
+        CommandOutput::Eval(metrics) => serde_json::to_string_pretty(metrics)?,
+        CommandOutput::Prediction(prediction) => serde_json::to_string_pretty(prediction)?,
+        CommandOutput::Matrix(report) => serde_json::to_string_pretty(report)?,
+        CommandOutput::LearningCurve(report) => serde_json::to_string_pretty(report)?,
+        CommandOutput::Evolution(report) => serde_json::to_string_pretty(report)?,
+    };
+    fs::write(path, json)?;
     Ok(())
 }
 

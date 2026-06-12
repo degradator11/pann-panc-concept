@@ -5,6 +5,7 @@ mod config;
 mod datasets;
 mod debug_report;
 mod evolve;
+mod evolved_run;
 mod folder_commands;
 mod learning_curve;
 mod matrix;
@@ -15,6 +16,7 @@ pub use args::{
     Args, DebugSamples, MatrixModel, OutputFormat, correction_mode_name, image_config, parse_args,
     required_data_path, required_image_path, required_model_path, required_out_path,
 };
+pub use artifacts::{EvolvedPancSearchArtifact, save_evolved_search_artifact};
 pub use config::print_config_report;
 pub use debug_report::{
     DebugReference, ImageEvalDebugData, ImageEvalPrediction, ResizePrediction,
@@ -25,7 +27,7 @@ pub use metrics::{
     EvolutionGenerationRow, EvolutionReport, EvolvedPancGenomeReport, LearningCurveReport,
     LearningCurveRow, MatrixReport, MatrixRow, MatrixSummary, MisclassifiedExample,
     PerClassAccuracy, PredictionNeighbor, PredictionOutput, classification_metrics,
-    most_common_confusion, worst_class, write_evolution_history_csv, write_matrix_rows_csv,
-    write_matrix_summaries_csv, write_output,
+    most_common_confusion, save_output_json, worst_class, write_evolution_history_csv,
+    write_matrix_rows_csv, write_matrix_summaries_csv, write_output,
 };
 pub use run::run;

@@ -1,12 +1,14 @@
 use std::env;
 use std::error::Error;
 
+use progress_ai::evolution::panc::normalize_block_mask;
 use progress_ai::pann::CorrectionMode;
 use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, ImageVectorConfig};
 
 use super::config::{
-    ConfigReport, ConfigSource, SourceMap, apply_config, build_config_report, default_sources,
-    find_config_path, load_config, set_source, skip_config_flag,
+    ConfigReport, ConfigSource, SourceMap, apply_config, apply_search_artifact,
+    build_config_report, default_sources, find_config_path, find_search_artifact_path, load_config,
+    set_source, skip_config_flag,
 };
 
 #[derive(Debug, Clone)]
@@ -16,8 +18,10 @@ pub struct Args {
     pub data_path: Option<String>,
     pub eval_data_path: Option<String>,
     pub out_path: Option<String>,
+    pub report_out_path: Option<String>,
     pub model_path: Option<String>,
     pub image_path: Option<String>,
+    pub search_artifact_path: Option<String>,
     pub epochs: usize,
     pub intervals: usize,
     pub correction_mode: CorrectionMode,
@@ -28,6 +32,9 @@ pub struct Args {
     pub image_resize: ImageResizeMode,
     pub samples_per_class: usize,
     pub top_k: usize,
+    pub panc_threshold: Option<f64>,
+    pub panc_jaccard_weight: Option<f64>,
+    pub panc_active_blocks: Option<u32>,
     pub target_mse: Option<f64>,
     pub matrix_models: Vec<MatrixModel>,
     pub matrix_features: Vec<ImageFeatureMode>,
@@ -87,7 +94,7 @@ impl DebugSamples {
     }
 }
 
-const USAGE: &str = "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder> [--config path|--config.location=path] [--format json|csv] [--data path] [--eval-data path] [--out path] [--model path] [--image path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]";
+const USAGE: &str = "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder|evolved-panc-image-folder> [--config path|--config.location=path] [--format json|csv] [--data path] [--eval-data path] [--out path] [--report-out path] [--model path] [--image path] [--search-artifact path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--panc-threshold f] [--panc-jaccard-weight f] [--panc-active-blocks 0xffff] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]";
 
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     parse_args_from(env::args().skip(1))
@@ -100,6 +107,7 @@ where
 {
     let raw = raw.into_iter().map(Into::into).collect::<Vec<_>>();
     let config_path = find_config_path(&raw)?;
+    let cli_search_artifact_path = find_search_artifact_path(&raw)?;
     let config = config_path.as_deref().map(load_config).transpose()?;
     let positional_command = raw
         .first()
@@ -125,9 +133,20 @@ where
     if let Some(config) = config.as_ref() {
         apply_config(&mut args, config, &mut sources)?;
     }
+    if let Some(path) = cli_search_artifact_path {
+        args.search_artifact_path = Some(path);
+        set_source(&mut sources, "search_artifact_path", ConfigSource::Cli);
+    }
+    if let Some(path) = args.search_artifact_path.clone() {
+        apply_search_artifact(&mut args, &path, &mut sources)?;
+    }
     apply_cli_flags(&mut args, &raw, positional_command.is_some(), &mut sources)?;
 
-    if let Some(path) = config_path {
+    if let Some(path) = config_path.or_else(|| {
+        args.search_artifact_path
+            .as_ref()
+            .map(|path| format!("search artifact: {path}"))
+    }) {
         args.config_report = Some(build_config_report(path, &args, &sources));
     }
 
@@ -141,8 +160,10 @@ fn default_args(command: String) -> Args {
         data_path: None,
         eval_data_path: None,
         out_path: None,
+        report_out_path: None,
         model_path: None,
         image_path: None,
+        search_artifact_path: None,
         epochs: 12,
         intervals: 8,
         correction_mode: CorrectionMode::DifferenceLeastSquares,
@@ -153,6 +174,9 @@ fn default_args(command: String) -> Args {
         image_resize: ImageResizeMode::Stretch,
         samples_per_class: 80,
         top_k: 3,
+        panc_threshold: None,
+        panc_jaccard_weight: None,
+        panc_active_blocks: None,
         target_mse: None,
         matrix_models: Vec::new(),
         matrix_features: Vec::new(),
@@ -212,6 +236,19 @@ fn apply_cli_flags(
                 args.out_path = Some(next_value(raw, &mut index, flag)?);
                 set_source(sources, "out_path", ConfigSource::Cli);
             }
+            "--report-out" => {
+                args.report_out_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "report_out_path", ConfigSource::Cli);
+            }
+            other if other.starts_with("--report-out=") => {
+                args.report_out_path = Some(
+                    other
+                        .strip_prefix("--report-out=")
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+                set_source(sources, "report_out_path", ConfigSource::Cli);
+            }
             "--model" => {
                 args.model_path = Some(next_value(raw, &mut index, flag)?);
                 set_source(sources, "model_path", ConfigSource::Cli);
@@ -219,6 +256,10 @@ fn apply_cli_flags(
             "--image" => {
                 args.image_path = Some(next_value(raw, &mut index, flag)?);
                 set_source(sources, "image_path", ConfigSource::Cli);
+            }
+            "--search-artifact" | "--search-artifact.location" | "--search-artifact-location" => {
+                args.search_artifact_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "search_artifact_path", ConfigSource::Cli);
             }
             "--epochs" => {
                 args.epochs = next_value(raw, &mut index, flag)?.parse::<usize>()?;
@@ -268,6 +309,19 @@ fn apply_cli_flags(
             "--top-k" => {
                 args.top_k = next_value(raw, &mut index, flag)?.parse::<usize>()?;
                 set_source(sources, "top_k", ConfigSource::Cli);
+            }
+            "--panc-threshold" => {
+                args.panc_threshold = Some(next_value(raw, &mut index, flag)?.parse::<f64>()?);
+                set_source(sources, "panc_threshold", ConfigSource::Cli);
+            }
+            "--panc-jaccard-weight" => {
+                args.panc_jaccard_weight = Some(next_value(raw, &mut index, flag)?.parse::<f64>()?);
+                set_source(sources, "panc_jaccard_weight", ConfigSource::Cli);
+            }
+            "--panc-active-blocks" => {
+                args.panc_active_blocks =
+                    Some(parse_active_blocks(&next_value(raw, &mut index, flag)?)?);
+                set_source(sources, "panc_active_blocks", ConfigSource::Cli);
             }
             "--target-mse" => {
                 args.target_mse = Some(next_value(raw, &mut index, flag)?.parse::<f64>()?);
@@ -391,7 +445,11 @@ fn apply_cli_flags(
                     ConfigSource::Cli,
                 );
             }
-            other if other.starts_with("--config=") || other.starts_with("--config.location=") => {}
+            other
+                if other.starts_with("--config=")
+                    || other.starts_with("--config.location=")
+                    || other.starts_with("--search-artifact=")
+                    || other.starts_with("--search-artifact.location=") => {}
             other if !other.starts_with("--") => {
                 return Err(format!("unexpected positional argument {other:?}").into());
             }
@@ -511,6 +569,19 @@ where
         .map(str::parse::<T>)
         .collect::<Result<Vec<_>, _>>()
         .map_err(Into::into)
+}
+
+pub(super) fn parse_active_blocks(value: &str) -> Result<u32, Box<dyn Error>> {
+    let trimmed = value.trim();
+    let parsed = if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
+        u32::from_str_radix(hex, 16)?
+    } else {
+        trimmed.parse::<u32>()?
+    };
+    Ok(normalize_block_mask(parsed))
 }
 
 fn split_csv_values(value: &str) -> Vec<&str> {

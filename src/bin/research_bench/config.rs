@@ -6,10 +6,12 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::args::{
-    Args, MatrixModel, correction_mode_name, output_format_name, parse_correction_mode,
-    parse_correction_modes_list, parse_debug_samples, parse_format, parse_image_features_list,
-    parse_image_resize_modes_list, parse_matrix_models, parse_number_list,
+    Args, MatrixModel, correction_mode_name, output_format_name, parse_active_blocks,
+    parse_correction_mode, parse_correction_modes_list, parse_debug_samples, parse_format,
+    parse_image_features_list, parse_image_resize_modes_list, parse_matrix_models,
+    parse_number_list,
 };
+use super::artifacts::load_evolved_search_artifact;
 
 pub type SourceMap = HashMap<&'static str, ConfigSource>;
 
@@ -30,6 +32,7 @@ pub struct ConfigReportEntry {
 pub enum ConfigSource {
     Default,
     Config,
+    Search,
     Cli,
 }
 
@@ -38,6 +41,7 @@ impl ConfigSource {
         match self {
             Self::Default => "default",
             Self::Config => "config",
+            Self::Search => "search",
             Self::Cli => "cli",
         }
     }
@@ -49,8 +53,10 @@ const REPORT_FIELDS: &[&str] = &[
     "data_path",
     "eval_data_path",
     "out_path",
+    "report_out_path",
     "model_path",
     "image_path",
+    "search_artifact_path",
     "epochs",
     "intervals",
     "correction_mode",
@@ -61,6 +67,9 @@ const REPORT_FIELDS: &[&str] = &[
     "image_resize",
     "samples_per_class",
     "top_k",
+    "panc_threshold",
+    "panc_jaccard_weight",
+    "panc_active_blocks",
     "target_mse",
     "matrix_models",
     "matrix_features",
@@ -100,10 +109,22 @@ pub struct BenchConfig {
     eval_data: Option<String>,
     #[serde(alias = "out_path")]
     out: Option<String>,
+    #[serde(
+        alias = "report_out_path",
+        alias = "report-out",
+        alias = "report-out-path"
+    )]
+    report_out: Option<String>,
     #[serde(alias = "model_path")]
     model: Option<String>,
     #[serde(alias = "image_path")]
     image: Option<String>,
+    #[serde(
+        alias = "search_artifact_path",
+        alias = "search-artifact",
+        alias = "search-artifact-path"
+    )]
+    search_artifact: Option<String>,
     epochs: Option<usize>,
     intervals: Option<usize>,
     #[serde(alias = "correction-mode")]
@@ -119,6 +140,12 @@ pub struct BenchConfig {
     samples_per_class: Option<usize>,
     #[serde(alias = "top-k")]
     top_k: Option<usize>,
+    #[serde(alias = "panc-threshold")]
+    panc_threshold: Option<f64>,
+    #[serde(alias = "panc-jaccard-weight")]
+    panc_jaccard_weight: Option<f64>,
+    #[serde(alias = "panc-active-blocks")]
+    panc_active_blocks: Option<Value>,
     target_mse: Option<f64>,
     matrix_models: Option<Value>,
     matrix_features: Option<Value>,
@@ -157,8 +184,10 @@ pub fn print_config_report(args: &Args) {
         return;
     };
 
-    eprintln!("Loaded config: {}", report.path);
-    eprintln!("Parameter sources (CLI overrides config, config overrides defaults):");
+    eprintln!("Parameter source report: {}", report.path);
+    eprintln!(
+        "Parameter sources (CLI overrides search, search overrides config, config overrides defaults):"
+    );
     for entry in &report.entries {
         eprintln!(
             "  {:34} {:8} {}",
@@ -199,6 +228,31 @@ pub fn find_config_path(raw: &[String]) -> Result<Option<String>, Box<dyn Error>
         index += 1;
     }
     Ok(config_path)
+}
+
+pub fn find_search_artifact_path(raw: &[String]) -> Result<Option<String>, Box<dyn Error>> {
+    let mut index = 0usize;
+    let mut search_artifact_path = None;
+    while index < raw.len() {
+        let value = raw[index].as_str();
+        if let Some(path) = value
+            .strip_prefix("--search-artifact=")
+            .or_else(|| value.strip_prefix("--search-artifact.location="))
+        {
+            search_artifact_path = Some(path.to_string());
+        } else if matches!(
+            value,
+            "--search-artifact" | "--search-artifact.location" | "--search-artifact-location"
+        ) {
+            index += 1;
+            let path = raw
+                .get(index)
+                .ok_or_else(|| format!("{value} requires a value"))?;
+            search_artifact_path = Some(path.clone());
+        }
+        index += 1;
+    }
+    Ok(search_artifact_path)
 }
 
 pub fn skip_config_flag(raw: &[String], index: &mut usize) -> bool {
@@ -265,6 +319,10 @@ pub fn apply_config(
         args.out_path = Some(value.clone());
         set_source(sources, "out_path", ConfigSource::Config);
     }
+    if let Some(value) = &config.report_out {
+        args.report_out_path = Some(value.clone());
+        set_source(sources, "report_out_path", ConfigSource::Config);
+    }
     if let Some(value) = &config.model {
         args.model_path = Some(value.clone());
         set_source(sources, "model_path", ConfigSource::Config);
@@ -272,6 +330,10 @@ pub fn apply_config(
     if let Some(value) = &config.image {
         args.image_path = Some(value.clone());
         set_source(sources, "image_path", ConfigSource::Config);
+    }
+    if let Some(value) = &config.search_artifact {
+        args.search_artifact_path = Some(value.clone());
+        set_source(sources, "search_artifact_path", ConfigSource::Config);
     }
     if let Some(value) = config.epochs {
         args.epochs = value;
@@ -318,6 +380,21 @@ pub fn apply_config(
     if let Some(value) = config.top_k {
         args.top_k = value;
         set_source(sources, "top_k", ConfigSource::Config);
+    }
+    if let Some(value) = config.panc_threshold {
+        args.panc_threshold = Some(value);
+        set_source(sources, "panc_threshold", ConfigSource::Config);
+    }
+    if let Some(value) = config.panc_jaccard_weight {
+        args.panc_jaccard_weight = Some(value);
+        set_source(sources, "panc_jaccard_weight", ConfigSource::Config);
+    }
+    if let Some(value) = &config.panc_active_blocks {
+        args.panc_active_blocks = Some(parse_active_blocks(&config_atom_as_string(
+            value,
+            "panc_active_blocks",
+        )?)?);
+        set_source(sources, "panc_active_blocks", ConfigSource::Config);
     }
     if let Some(value) = config.target_mse {
         args.target_mse = Some(value);
@@ -444,6 +521,39 @@ pub fn apply_config(
     Ok(())
 }
 
+pub fn apply_search_artifact(
+    args: &mut Args,
+    path: &str,
+    sources: &mut SourceMap,
+) -> Result<(), Box<dyn Error>> {
+    let artifact = load_evolved_search_artifact(path)?;
+    let genome = artifact.best_genome;
+    args.image_width = genome.image_size;
+    args.image_height = genome.image_size;
+    args.image_features = genome
+        .image_features
+        .parse()
+        .map_err(|source| format!("invalid image_features in search artifact: {source}"))?;
+    args.image_resize = genome
+        .image_resize
+        .parse()
+        .map_err(|source| format!("invalid image_resize in search artifact: {source}"))?;
+    args.top_k = genome.top_k.max(1);
+    args.panc_threshold = Some(genome.threshold);
+    args.panc_jaccard_weight = Some(genome.jaccard_weight);
+    args.panc_active_blocks = Some(parse_active_blocks(&genome.active_blocks)?);
+
+    set_source(sources, "image_width", ConfigSource::Search);
+    set_source(sources, "image_height", ConfigSource::Search);
+    set_source(sources, "image_features", ConfigSource::Search);
+    set_source(sources, "image_resize", ConfigSource::Search);
+    set_source(sources, "top_k", ConfigSource::Search);
+    set_source(sources, "panc_threshold", ConfigSource::Search);
+    set_source(sources, "panc_jaccard_weight", ConfigSource::Search);
+    set_source(sources, "panc_active_blocks", ConfigSource::Search);
+    Ok(())
+}
+
 fn config_value_as_csv(value: &Value, field: &str) -> Result<String, Box<dyn Error>> {
     match value {
         Value::String(value) => Ok(value.clone()),
@@ -475,8 +585,10 @@ fn config_report_value(args: &Args, field: &str) -> String {
         "data_path" => option_string(&args.data_path),
         "eval_data_path" => option_string(&args.eval_data_path),
         "out_path" => option_string(&args.out_path),
+        "report_out_path" => option_string(&args.report_out_path),
         "model_path" => option_string(&args.model_path),
         "image_path" => option_string(&args.image_path),
+        "search_artifact_path" => option_string(&args.search_artifact_path),
         "epochs" => args.epochs.to_string(),
         "intervals" => args.intervals.to_string(),
         "correction_mode" => correction_mode_name(args.correction_mode).to_string(),
@@ -487,6 +599,12 @@ fn config_report_value(args: &Args, field: &str) -> String {
         "image_resize" => args.image_resize.as_str().to_string(),
         "samples_per_class" => args.samples_per_class.to_string(),
         "top_k" => args.top_k.to_string(),
+        "panc_threshold" => option_f64(args.panc_threshold),
+        "panc_jaccard_weight" => option_f64(args.panc_jaccard_weight),
+        "panc_active_blocks" => args
+            .panc_active_blocks
+            .map(|value| format!("0x{value:04x}"))
+            .unwrap_or_else(|| "<none>".to_string()),
         "target_mse" => args
             .target_mse
             .map(|value| value.to_string())
@@ -568,6 +686,12 @@ fn matrix_model_name(model: MatrixModel) -> &'static str {
 
 fn option_string(value: &Option<String>) -> String {
     value.clone().unwrap_or_else(|| "<none>".to_string())
+}
+
+fn option_f64(value: Option<f64>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "<none>".to_string())
 }
 
 fn list_string(values: impl Iterator<Item = String>) -> String {

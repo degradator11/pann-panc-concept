@@ -92,6 +92,11 @@ What is working:
   error step by step.
 - `evolve-panc-image-folder` can now search for compact binary comparator
   settings using a validation split and optional final eval folder.
+- Evolved PANC-like search output is now a reusable search artifact. The
+  `evolved-panc-image-folder` command can consume it for deterministic
+  in-memory train/eval runs.
+- Any benchmark command can now write a separate JSON metrics artifact with
+  `--report-out`, leaving `--out` for command-specific artifacts.
 
 What is still weak:
 
@@ -124,6 +129,17 @@ It searches:
 
 It uses a training-folder validation split for search and reserves `--eval-data`
 for final reporting only.
+
+Artifact pipeline:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium --eval-data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium\Eval --out models\evolved-panc-cats-dogs.search.json --report-out reports\evolved-panc-search-report.json --population 5000 --generations 50 --threads 32 --evolve-image-sizes 64,128 --evolve-features rich,rich-texture,rich-hog,rich-edge,rich-layout --evolve-resize-modes center-crop,foreground-crop --evolve-top-k 1,3,5,7 --memory-penalty-per-mb 0 --inference-penalty-per-ms 0 --format json
+cargo run --release --bin research-bench -- evolved-panc-image-folder --data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium --eval-data C:\Users\vilex\Downloads\kagglecatsanddogs_5340\PetImages_medium\Eval --search-artifact models\evolved-panc-cats-dogs.search.json --report-out reports\evolved-panc-eval-report.json --format json
+```
+
+Interpretation: the first command searches and writes the recipe. The second
+command rebuilds the analogue library from the training folder, applies that
+recipe, evaluates the eval folder, and writes a separate metrics report.
 
 Smoke command:
 

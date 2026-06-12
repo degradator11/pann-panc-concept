@@ -212,6 +212,43 @@ Config lists accept either JSON arrays or comma-separated strings:
 }
 ```
 
+### Artifact Pipeline
+
+The benchmark tool now keeps three artifact types separate:
+
+- **Search artifact**: output from `evolve-panc-image-folder`. It stores the
+  best PANC-like comparator recipe found by genetic search.
+- **Model artifact**: output from `train-pann-image-folder` or
+  `train-panc-image-folder`. It stores a reusable trained image model.
+- **Run report artifact**: output from `--report-out`. It stores the JSON
+  metrics for whatever command just ran.
+
+This means `--out` remains command-specific, while `--report-out` is always the
+metrics JSON.
+
+Search for a PANC-like recipe:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-image-folder --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --out models\evolved-panc-cats-dogs.search.json --report-out reports\evolved-panc-search-report.json --population 5000 --generations 50 --threads 32 --evolve-image-sizes 64,128 --evolve-features rich,rich-texture,rich-hog,rich-edge,rich-layout --evolve-resize-modes center-crop,foreground-crop --evolve-top-k 1,3,5,7 --memory-penalty-per-mb 0 --inference-penalty-per-ms 0 --format json
+```
+
+Reuse that recipe for a deterministic in-memory train/eval run:
+
+```powershell
+cargo run --release --bin research-bench -- evolved-panc-image-folder --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --search-artifact models\evolved-panc-cats-dogs.search.json --report-out reports\evolved-panc-eval-report.json --format json
+```
+
+The `evolved-panc-image-folder` command does not load a trained classifier.
+It rebuilds the analogue library from `--data`, applies the searched binary
+threshold/Jaccard/block-mask settings, then evaluates `--eval-data`.
+
+Train and evaluate a persistent PANN artifact:
+
+```powershell
+cargo run --release --bin research-bench -- train-pann-image-folder --data C:\datasets\cats-dogs\train --out models\cats-dogs-pann.json --report-out reports\cats-dogs-pann-train-report.json --image-size 64 --image-features rich-texture --image-resize center-crop --epochs 12 --intervals 8 --format json
+cargo run --release --bin research-bench -- eval-pann --model models\cats-dogs-pann.json --data C:\datasets\cats-dogs\eval --report-out reports\cats-dogs-pann-eval-report.json --format json
+```
+
 Supported image formats are PNG and JPEG. Images are resized to the configured
 size, then vectorized. `--image-features pixels` uses raw grayscale pixels.
 `--image-features combined` uses a smaller handcrafted vector with color
@@ -519,13 +556,23 @@ current implementation is CPU-parallel; the NVIDIA RTX 5090 is not used yet.
 When `--out models\name.json` is provided, the command writes:
 
 ```text
-models\name.json          best evolved genome and final metrics
+models\name.json          reusable search artifact with the best genome
 models\name.history.csv   best genome per generation
 ```
 
 The generation history is the first thing to inspect. A useful run should show
 validation accuracy improving or stabilizing above random search, not merely a
 single lucky generation.
+
+Use the search artifact directly with:
+
+```powershell
+cargo run --release --bin research-bench -- evolved-panc-image-folder --data C:\datasets\cats-dogs\train --eval-data C:\datasets\cats-dogs\eval --search-artifact models\name.json --report-out reports\name.eval.json --format json
+```
+
+The parameter source report printed to stderr will mark imported image and
+binary-comparator settings as `search`. Explicit CLI flags still override
+them.
 
 Current medium Cats/Dogs result with descriptor-block masking, population 5000,
 50 generations, and 32 threads:

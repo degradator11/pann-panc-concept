@@ -7,6 +7,8 @@ use progress_ai::pann::{FeatureRange, PannModelSnapshot};
 use progress_ai::vision::{ImageFeatureMode, ImageResizeMode, ImageVectorConfig};
 use serde::{Deserialize, Serialize};
 
+use super::metrics::EvolvedPancGenomeReport;
+
 pub const ARTIFACT_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -85,6 +87,25 @@ pub struct PancReferenceArtifact {
     pub label: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EvolvedPancSearchArtifact {
+    pub version: u32,
+    pub model: String,
+    pub class_names: Vec<String>,
+    pub best_genome: EvolvedPancGenomeReport,
+    pub best_fitness: f64,
+    pub validation_accuracy: f64,
+    pub eval_accuracy: Option<f64>,
+    pub seed: u64,
+    pub population_size: usize,
+    pub generations: usize,
+    pub elite_count: usize,
+    pub mutation_rate: f64,
+    pub validation_ratio: f64,
+    pub threads: usize,
+    pub hardware_note: String,
+}
+
 pub fn save_artifact(
     path: impl AsRef<Path>,
     artifact: &ModelArtifact,
@@ -102,4 +123,28 @@ pub fn save_artifact(
 pub fn load_artifact(path: impl AsRef<Path>) -> Result<ModelArtifact, Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     Ok(serde_json::from_str(&contents)?)
+}
+
+pub fn save_evolved_search_artifact(
+    path: impl AsRef<Path>,
+    artifact: &EvolvedPancSearchArtifact,
+) -> Result<(), Box<dyn Error>> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, serde_json::to_string_pretty(artifact)?)?;
+    Ok(())
+}
+
+pub fn load_evolved_search_artifact(
+    path: impl AsRef<Path>,
+) -> Result<EvolvedPancSearchArtifact, Box<dyn Error>> {
+    let path = path.as_ref();
+    let contents = fs::read_to_string(path)
+        .map_err(|source| format!("failed to read search artifact {path:?}: {source}"))?;
+    serde_json::from_str(&contents)
+        .map_err(|source| format!("failed to parse search artifact {path:?}: {source}").into())
 }
