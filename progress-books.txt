@@ -1,0 +1,383 @@
+Progress.ai public publication findings and PANC notes
+Date: 2026-06-12
+
+Scope
+-----
+I reviewed the public Progress.ai team, publications, PANC, PANN, tests, and
+patent pages, plus the public Springer metadata for their 2026 AIR-RES paper.
+Springer exposes the abstract, references, keywords, authors, and DOI metadata
+for the PANC paper, but not the full chapter text without institutional or paid
+access. Progress.ai states the same access limitation on its publication page.
+
+Primary team members from Progress.ai
+-------------------------------------
+Progress.ai lists these executive/team members:
+
+- Vladimir Proseanic: Chairman and President; founder; author of multiple
+  patents and active contributor to innovation science.
+- Boris Zlotin: Chief Scientist; TRIZ theorist; multiple-patent holder and
+  author of numerous books and publications.
+- Svetlana Visnepolschi: Chief Information Officer; patent expert; author of
+  many patents, books, and publications.
+- Jim Cook: Chief Financial Officer; included as a co-author of the Springer
+  PANC paper.
+- Anatoly/Anatol Guin: EMEA Representative; Progress says his books are
+  published in the USA, Germany, France, Japan, China, and other countries.
+- Vladimir Tumanyants: board member/shareholder; no PANC/PANN publication
+  found during this pass.
+
+Core PANC/PANN publications found
+---------------------------------
+
+1. "Comparative Recognition Technology for Artificial Intelligence"
+   URL: https://link.springer.com/chapter/10.1007/978-3-032-13056-3_17
+   DOI: https://doi.org/10.1007/978-3-032-13056-3_17
+   First online: 2026-01-10.
+   Authors listed publicly by Springer: Boris Zlotin, Alla Zusman,
+   Vladimir Proseanic, Svetlana Visnepolschi, James Cook, Anatol Guin,
+   Vladimir Matsenko, Oleg Gafurov.
+   Publicly visible content: abstract, references, keywords, and metadata.
+   PANC-relevant public details:
+   - Uses a "binary comparison format" (BCF) for recognition/classification.
+   - Uses structured comparison libraries for similarity-based recognition.
+   - Claims reduced computational complexity and recognition time.
+   - Mentions digital and analog implementations, including medical diagnostics.
+   - Mentions a "PANC_Platform" program for recognition and cross-classification.
+   - Keywords include Associative Libraries, Explainable AI, Coefficient of
+     Similarity, Comparison, Recognition.
+   Missing from public abstract: exact BCF encoding, coefficient-of-similarity
+   formula, analogue library construction algorithm, and implementation details.
+
+2. "Peer-Reviewed Recognition of PANC Technology"
+   URL: https://progress.ai/peer-reviewed-recognition-of-panc-technology/
+   Progress.ai announcement for two AIR-RES 2025 Springer papers.
+   PANC-relevant details:
+   - Reviewer quote describes structured comparison libraries plus software or
+     analog comparators as the central alternative to traditional AI training.
+   - Progress.ai says Springer links expose abstracts/references only; full
+     papers require institutional or paid access.
+
+3. "PANC AI Technology"
+   URL: https://progress.ai/panc-ai-technology/
+   PANC-relevant details:
+   - PANC is explicitly comparator-centric, not gradient-trained.
+   - Recognition is framed as retrieving closest analogues from a similarity
+     library and transferring relevant information.
+   - Comparisons are described as binary/similarity operations over reference
+     libraries, potentially in parallel.
+   - Claims little/no traditional training, smaller matrices, and in many
+     operations a single multiplication.
+
+4. "What is a Neuromorphic Comparator?"
+   URL: https://progress.ai/what-is-a-neuromorphic-comparator/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-10-09.
+   PANC-relevant details:
+   - PANC is not an ANN.
+   - It compares a holistic input image against a rich image library.
+   - It returns similarity scores/ranked analogues rather than hidden weights.
+   - It does not sequentially scan the library; they claim simultaneous access.
+   - "No training": the first replacement is a static image library.
+   - Each PANC "neuron" stores a single image independently; images can be
+     added, removed, or modified without retraining the whole system.
+   - This supports our PANC-like analogue library direction, but not enough to
+     reconstruct their exact proprietary comparator.
+
+5. "Energy efficiency of the PANC technology"
+   URL: https://progress.ai/energy-efficiency-of-the-panc-technology/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-10-16.
+   PANC-relevant details:
+   - Repeats that PANC requires no training.
+   - Claims PANC has a matrix multiplication, but matrices are thousands of
+     times smaller and there is only a single multiplication.
+
+6. "Chart recognition"
+   URL: https://progress.ai/chart-recognition/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-10-31.
+   PANC-relevant details:
+   - Preprocessing is domain-specific. Faces, charts, landscapes, portraits,
+     radiographs, etc. need different preparation.
+   - For ECG/charts, background dominated scoring until they removed it.
+   - Claims they do not need 100,000 images; around 100-300 processed images
+     may suffice in some domains.
+   - Describes semi-automatic library/class construction: pick one example,
+     run comparator, inspect top matches, discard wrong examples, form class.
+   - Describes positive-feedback library growth: recognized new images can be
+     added to the library.
+   - Describes fast transform search: scale, tilt, rotation, etc.
+
+7. "Priorities for applying PANC"
+   URL: https://progress.ai/priorities-for-applying-panc/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-10-24.
+   PANC-relevant details:
+   - Describes priority domains: drones, chemical/reactor control, automobiles,
+     medicine/diagnostics, epidemic monitoring, and scattered-information
+     analysis.
+   - Repeats that PANC does not need training in the neural-network sense.
+   - Gives a concrete library-growth concept for autonomous driving: start with
+     a small local library, observe human drivers, add road situations, and
+     propagate newly discovered situations across networked cars.
+   - Repeats the "each neuron is an independent piece of knowledge" idea:
+     library entries can be added, removed, modified, or partitioned without
+     disturbing the rest of the system.
+   - Claims the key shift is "computation to comparison", especially for large
+     scattered-data problems.
+
+8. "Market for PANC"
+   URL: https://progress.ai/market-for-panc/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-11-13.
+   PANC-relevant details:
+   - Mostly market positioning, not algorithmic detail.
+   - Useful only as corroboration that they see PANN/PANC as simple, inexpensive,
+     scalable intelligence embedded in vehicles, homes, robots, advisors, and
+     education/entertainment systems.
+
+9. "On the Mona Lisa and a scientists' stereotype"
+   URL: https://progress.ai/on-the-mona-lisa-and-a-scientists-stereotype/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-11-06.
+   PANC-relevant details:
+   - They claim better recognition with tiny machine artifacts than with
+     large human-looking images in some cases.
+   - Specific public hint: reduce to 32 x 32 pixels and ten grayscale levels.
+   - They explicitly warn that 6 MB images may be worse for their system than
+     32 x 32 versions.
+   - This is the strongest public clue that our next PANC work should test a
+     low-resolution quantized representation, not only richer handcrafted
+     image descriptors.
+
+10. "Precursors of Artificial Intelligence"
+   URL: https://progress.ai/precursors-of-artificial-intelligence/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-11-23.
+   PANC-relevant details:
+   - They cite Gibson, Gregory, Marr, and Gleyzer as conceptual precursors.
+   - They describe memory as many portraits/analogues and recognition as finding
+     most similar stored items and transferring information.
+   - They claim use cases including cell nuclei, radiographs, and faces.
+   - They claim the comparator compares one image against thousands or millions
+     in parallel, and that throughput depends on cores/computer power.
+
+11. "How PANN and PANC Will Affect the AI Industry"
+   URL: https://progress.ai/how-pann-and-panc-affect-ai-industry/
+   Dialogue by Anatoly Guin and Boris Zlotin, 2025-11-28.
+   PANC-relevant details:
+   - PANN is described as a single-layer neural network.
+   - PANC is described as an associative neuromorphic comparator, not a neural
+     network.
+   - They say PANN came first; then they asked why it worked better and moved
+     toward recognition by comparison with library images.
+   - They also say PANC is still immature and should be hybridized with mature
+     conventional software.
+
+12. "AI-Empowered Creative Problem Solving"
+    URL: https://link.springer.com/chapter/10.1007/978-3-032-13056-3_28
+    Progress.ai lists it as the second AIR-RES 2025 paper, pages 396-412.
+    I could not read the full chapter publicly. Based on Progress.ai's
+    description, it is more about AI-assisted creative problem solving than
+    PANC implementation.
+
+PANN publications found
+-----------------------
+
+1. "Analog and Digital Modeling of a Scalable Neural Network"
+   URL: https://progress.ai/analog-digital-modeling-scalable-neural-network/
+   Authors: D. Pescianschi, A. Boudichevskaia, B. Zlotin, V. Proseanic.
+   PANN-relevant details:
+   - P-network/PANN uses multiple weights per synapse.
+   - Corrective weight selection depends on incoming signal intensity.
+   - Output can be a simple sum; sigmoid is not required.
+   - Training corrects selected weights from direct and retrograde/expected
+     signals.
+   - Digital recognition and training can be written as matrix operations.
+   - Test section says inputs=1000, outputs=20, images/records=500-7000; around
+     7000 records gave a 3250x speed comparison against IBM SPSS Statistics 22.
+
+2. "Main Principles of the General Theory of Neural Network with Internal Feedback"
+   URL: https://progress.ai/main-principles-general-theory-neural-network-internal-feedback/
+   Author: D. Pescianschi.
+   PANN-relevant details:
+   - Biological/internal-feedback motivation for local learning.
+   - Training is per-neuron/local and selected mediators/weights depend on input
+     signal level.
+   - One epoch may be repeated until accuracy/convergence threshold is reached.
+
+3. "Fast trained neural network"
+   URL: https://progress.ai/fast-trained-neural-network/
+   PANN-relevant details:
+   - Describes PANN classes/objects: PNet, InputSignal, NeuronUnit, Synapse.
+   - Synapse contains an array of corrective weights.
+   - InputSignal stores min/max signal values, interval count, and interval
+     width.
+   - Training sums coefficient-weight products, calculates correction, and
+     applies coefficient-scaled correction to selected/corresponding weights.
+   - Reports an Iris comparison where PANN training speed was 1 ms vs 22,141 ms
+     for a TensorFlow DNN at comparable error.
+
+Broader team publications and references found in public metadata
+-----------------------------------------------------------------
+The Springer PANC paper references several older TRIZ/innovation publications
+by Boris Zlotin, Alla Zusman, and related coauthors. These are not PANC
+implementation papers, but they are publicly named in the PANC paper metadata:
+
+- Altshuller, Zlotin, Zusman, Philatov: "Searching for New Ideas: From Insight
+  to Methodology; The Theory and Practice of Inventive Problem Solving" (1989).
+- Zlotin, Zusman: "Solving Scientific Problems" (1991).
+- "TRIZ in Progress. Transactions of the Ideation Research Group" (1999).
+- Zlotin, Zusman: "What is TRIZ?" (2024), public Google Drive link listed by
+  Springer.
+- Terninko, Zusman, Zlotin: "Systematic Innovation: An Introduction to TRIZ"
+  (1998), plus translated editions.
+- Zlotin, Zusman: "Is it Possible to Teach AI to Become a Creative Problem
+  Solver?" (2024), public Google Drive link listed by Springer.
+- Zlotin, Matsenko: "PANN: A New Artificial Intelligence Technology: Tutorial"
+  (2024), Amazon author/books link listed by Springer.
+- Pescianschi, Boudichevskaia, Zlotin, Proseanic: "Analog and digital modeling
+  of a scalable neural network" (ICAI 2015), also published on Progress.ai.
+- Farber, Proseanic, Zlotin, Martynov: "Progressive artificial neural network
+  for medical applications" (Annals of Mechnikov Institute, 2021), listed in
+  the Springer PANC paper references.
+
+Public profile, Wikipedia, LinkedIn, exhibition/conference search
+-----------------------------------------------------------------
+
+After the first pass, I also checked public profile-style pages and broader
+search terms for LinkedIn, exhibitions, conference presentations, and talks.
+
+Useful public profile findings:
+
+- Russian Wikipedia has a page for Boris Lvovich Zlotin:
+  https://ru.wikipedia.org/wiki/Злотин,_Борис_Львович
+  It describes him as a Soviet designer/inventor/engineer and one of the
+  leading TRIZ theorists/methodologists. It also says he became chief scientist
+  at Ideation International in 1992, and lists many TRIZ/innovation books.
+  PANC-relevance: historical/intellectual lineage only; no PANC algorithmic
+  details.
+
+- Russian Wikipedia has a page for Alla Veniaminovna Zusman:
+  https://ru.wikipedia.org/wiki/Зусман,_Алла_Вениаминовна
+  She is not on the Progress.ai team page I reviewed, but she is a coauthor of
+  the Springer PANC paper and many Zlotin/TRIZ publications. PANC-relevance:
+  corroborates the same TRIZ/innovation lineage.
+
+- The Zlotin bibliography lists or confirms many books, including TRIZ
+  imagination/creative-thinking texts, "Systematic Innovation", "Tools of
+  Classical TRIZ", "Directed Evolution", "Matrix 2003", and "New Tools for
+  Failure and Risk Analysis" with Svetlana Visnepolschi, Boris Zlotin, Alla
+  Zusman, and Stan Kaplan.
+
+LinkedIn/exhibition search result:
+
+- I searched public web results for combinations of the team names with
+  LinkedIn, exhibition, scientific exhibition, conference, PANN, PANC,
+  Progress.ai, Progress Inc, AIR-RES 2025, and PANC_Platform.
+- Public LinkedIn content was not readable/indexed enough from this environment
+  to cite.
+- I did not find a public exhibition/talk transcript or slide deck that exposes
+  the missing PANC details: BCF encoding, exact coefficient-of-similarity
+  formula, analogue-library construction algorithm, or hardware comparator
+  layout.
+- The best public "talk-like" material remains the Progress.ai dialogue series
+  by Anatoly Guin and Boris Zlotin.
+
+Patents
+-------
+Progress.ai's patent page lists international patents for neural architectures,
+neuromorphic computing, and comparative recognition:
+https://progress.ai/patents/
+
+The list includes US9390373B2, US9619749B2, US10423694B2, US11494653B2,
+EP3114540B1, EA035114B1, CA2941352C, IL247533B, JP6382354B2, JP7041078B2,
+CN106104406B, HK1227499A1/B, TWI655587B, KR102166105B1, KR102558300B1,
+SG11201608265XA, MX357374B, and India Patent 448261. These are useful for PANN
+mechanics, but I did not find a public patent text in this pass that exposes an
+exact PANC BCF/comparator formula.
+
+Progress.ai tests page notes
+----------------------------
+URL: https://progress.ai/tests/
+
+The page text I fetched includes:
+
+- "Training Time and Error Benchmarking"
+- "Target error: 0.02 (Mean Squared Error)"
+- Progress PANN frame1:
+  - 1 epoch: error 0.058916, training time 343 ms.
+  - 5 epochs: error 0.018097, training time 640 ms.
+  - 10 epochs: error 0.018097, training time 640 ms.
+- It also says "Tested training set: 30,000 images" near that section.
+- A separate IBM SPSS comparison says:
+  - PANN: 7,000 images, 4s.
+  - IBM SPSS Statistics 22: 7,000 images, 3h 43m.
+  - Training advantage factor: 13,400s / 4s = 3,350.
+
+Important interpretation:
+
+- The 0.018 value is Mean Squared Error, not necessarily classification error
+  or image-recognition accuracy.
+- The 7000-image/4-second claim appears in a PANN training-speed comparison,
+  not in the PANC no-training analogue-library comparator material.
+- Their older PANN paper states the test had 1000 inputs and 20 outputs with
+  500-7000 records/images, so "image" may mean vectorized records/samples in a
+  compact format, not JPEG decoding plus natural-image feature extraction.
+- This is not directly comparable to our cat/dog image-folder benchmarks.
+
+Does our dataset need to be larger?
+-----------------------------------
+Probably not as the main issue.
+
+Progress.ai's own PANC-oriented dialogue says some domains may need only
+100-300 specifically processed examples, while a 1000-image initial library can
+bootstrap larger library growth with user/specialist feedback. For our current
+PetImages experiments, 1500 training images and 3000 evaluation images is
+already large enough to test whether the representation/comparator direction is
+right.
+
+The stronger conclusion is that our representation and preprocessing are still
+probably wrong/incomplete relative to their public PANC hints:
+
+- Need low-resolution direct artifacts: 32 x 32 grayscale, around ten levels.
+- Need background/foreground or object-region handling.
+- Need domain-specific preparation for cats/dogs.
+- Need similarity over analogue libraries, not a conventional trainable hidden
+  model.
+- Need class/library construction, top-match inspection, and positive-feedback
+  library growth.
+- Need fast transform search: crop/scale/tilt/rotation variants.
+- Need a BCF-like compact representation and a coefficient-of-similarity
+  scoring family; exact formula remains undisclosed publicly.
+
+Recommended next implementation direction
+-----------------------------------------
+
+1. Add a "panc-lowres" image encoder:
+   - center/object crop option;
+   - resize to 32 x 32;
+   - grayscale quantization to 10 levels;
+   - optional bit-plane/BCF-like packing.
+
+2. Add similarity metrics designed for this representation:
+   - exact-level match ratio;
+   - absolute-difference similarity over 10-level cells;
+   - bit-plane Hamming/Jaccard;
+   - block-wise weighted similarity.
+
+3. Add transform search for PANC:
+   - center crop, square pad, scale variants, horizontal flip;
+   - later: small rotations/tilts.
+
+4. Add library builder:
+   - rank top matches;
+   - write top-k match sheets;
+   - allow selected/accepted analogues to become class library entries.
+
+5. Treat PANN and PANC separately in reports:
+   - PANN: training epochs, MSE/error, interval-coded weights.
+   - PANC: no training in the ANN sense; library construction, encoding, and
+     similarity/ranking quality.
+
+Bottom line
+-----------
+Public Progress.ai material confirms our general direction for a PANC-like
+baseline: analogue libraries, compact image artifacts, similarity scoring, and
+explainable top matches. It does not expose enough public detail to clone their
+exact PANC comparator. The most actionable new clue is not "use more images";
+it is "try much smaller, quantized, domain-preprocessed images and compare them
+as a library."
