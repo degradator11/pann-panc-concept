@@ -1,0 +1,19 @@
+[project]
+name = "cropper-yolo"
+version = "0.1.0"
+description = "Standalone YOLO cropper routine for PANN/PANC preprocessing"
+requires-python = ">=3.10"
+dependencies = [
+    "ultralytics>=8.3.0",
+    "pillow>=10.0",
+]
+
+[project.scripts]
+cropper-yolo = "cropper_yolo.__main__:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -130,9 +130,9 @@ a future deployment shape for stable workers, not the current research loop.
 Near-term architecture work:
 
 - define a common cropper output contract: cropped class folders plus
-  `detections.json`/`crop_manifest.jsonl`
+  `detections.json`/`crop_manifest.jsonl` (**first YOLO version implemented**)
 - implement cheap standalone croppers first, likely OpenCV foreground crop and
-  YOLO box crop
+  YOLO box crop (**YOLO box crop implemented first**)
 - keep background removal optional: `keep`, `solid gray`, `blur`, or mask-based
   modes
 - benchmark raw images versus cropped/normalized images before adding service
@@ -146,6 +146,29 @@ API/job runner
 -> PANN/PANC trainer/evaluator/predictor worker
 -> artifact storage and reports
 ```
+
+First YOLO cropper smoke on `PetImages_short`:
+
+| Split | Images Seen | Crops Written | Skipped No Detection |
+| --- | ---: | ---: | ---: |
+| Train | 602 | 558 | 44 |
+| Eval | 2002 | 1817 | 185 |
+
+The cropper produced valid centered cat/dog crops and manifest/report files.
+PANN trained successfully on those crops, but the first default crop settings
+did **not** improve recognition quality:
+
+```text
+YOLO crop + PANN rich-texture eval accuracy = 66.5%
+Cat accuracy = 40.0%
+Dog accuracy = 94.5%
+```
+
+Interpretation: the cropper routine works technically, but default box crops
+introduce or preserve enough bias/background that PANN becomes strongly
+dog-biased. Next experiments should compare larger crop expansion,
+`--background solid`, `--background blur`, lower/higher confidence thresholds,
+and possibly YOLO segmentation masks.
 
 ## Latest PANC-Like Genetic Search Snapshot
 

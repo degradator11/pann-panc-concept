@@ -4,4 +4,11 @@
 /pann-panc/target/
 /pann-panc/models/
 /pann-panc/reports/
+/cropper/cropper-yolo/.venv/
+/cropper/cropper-yolo/.ultralytics/
+/cropper/cropper-yolo/models/
+/cropper/cropper-yolo/runs/
+__pycache__/
+*.py[cod]
+*.egg-info/
 *.local.bat

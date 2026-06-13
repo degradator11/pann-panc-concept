@@ -3,6 +3,8 @@
 This repository is split into a simple local-development layout:
 
 - `pann-panc/` - Rust PANN/PANC research application and documentation.
+- `cropper/cropper-yolo/` - standalone YOLO cropper routine for turning raw
+  class-folder images into cropped class-folder images.
 - `.git/` - repository metadata, intentionally kept at this root level.
 - `push-with-token.local.bat` - local push helper, intentionally kept at this root level and ignored by git.
 
@@ -40,3 +42,22 @@ cargo run --release --bin research-bench -- eval-pann --model models\model.json 
 ```
 
 See `pann-panc/README.md` for full model/search/report artifact details.
+
+## Crop Images First
+
+The first cropper routine is YOLO-based and isolated in its own Python venv:
+
+```powershell
+cd cropper\cropper-yolo
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install wheel
+.\.venv\Scripts\python.exe -m pip install -e . --no-build-isolation
+.\.venv\Scripts\cropper-yolo.exe download-model
+.\.venv\Scripts\cropper-yolo.exe crop --data C:\path\to\raw-class-folders --out runs\my-crops --allowed-labels cat,dog --match-source-class --overwrite
+```
+
+Then train PANN/PANC on:
+
+```text
+cropper\cropper-yolo\runs\my-crops\crops
+```
