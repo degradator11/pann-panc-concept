@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "supervised-multi-directory-example",
+  "root": "C:/datasets/my-inspection-dataset",
+  "train": {
+    "normal": [
+      "train/good-camera-a",
+      "train/good-camera-b"
+    ],
+    "scratch": [
+      "train/scratch-small",
+      "train/scratch-large"
+    ]
+  },
+  "eval": {
+    "normal": "eval/good",
+    "scratch": [
+      "eval/scratch-small",
+      "eval/scratch-large"
+    ]
+  }
+}

@@ -52,6 +52,7 @@ const REPORT_FIELDS: &[&str] = &[
     "format",
     "data_path",
     "eval_data_path",
+    "dataset_config_path",
     "out_path",
     "report_out_path",
     "model_path",
@@ -84,6 +85,10 @@ const REPORT_FIELDS: &[&str] = &[
     "debug_limit",
     "debug_samples",
     "debug_neighbors",
+    "patch_size",
+    "patch_stride",
+    "max_train_patches",
+    "anomaly_threshold_quantile",
     "evolution_population",
     "evolution_generations",
     "evolution_elite_count",
@@ -107,6 +112,12 @@ pub struct BenchConfig {
     data: Option<String>,
     #[serde(alias = "eval_data_path", alias = "eval-data")]
     eval_data: Option<String>,
+    #[serde(
+        alias = "dataset_config_path",
+        alias = "dataset-config",
+        alias = "dataset-config-path"
+    )]
+    dataset_config: Option<String>,
     #[serde(alias = "out_path")]
     out: Option<String>,
     #[serde(
@@ -161,6 +172,10 @@ pub struct BenchConfig {
     debug_limit: Option<usize>,
     debug_samples: Option<String>,
     debug_neighbors: Option<usize>,
+    patch_size: Option<u32>,
+    patch_stride: Option<u32>,
+    max_train_patches: Option<usize>,
+    anomaly_threshold_quantile: Option<f64>,
     #[serde(alias = "evolution_population")]
     population: Option<usize>,
     #[serde(alias = "evolution_generations")]
@@ -315,6 +330,10 @@ pub fn apply_config(
         args.eval_data_path = Some(value.clone());
         set_source(sources, "eval_data_path", ConfigSource::Config);
     }
+    if let Some(value) = &config.dataset_config {
+        args.dataset_config_path = Some(value.clone());
+        set_source(sources, "dataset_config_path", ConfigSource::Config);
+    }
     if let Some(value) = &config.out {
         args.out_path = Some(value.clone());
         set_source(sources, "out_path", ConfigSource::Config);
@@ -457,6 +476,22 @@ pub fn apply_config(
         args.debug_neighbors = value;
         set_source(sources, "debug_neighbors", ConfigSource::Config);
     }
+    if let Some(value) = config.patch_size {
+        args.patch_size = value;
+        set_source(sources, "patch_size", ConfigSource::Config);
+    }
+    if let Some(value) = config.patch_stride {
+        args.patch_stride = value;
+        set_source(sources, "patch_stride", ConfigSource::Config);
+    }
+    if let Some(value) = config.max_train_patches {
+        args.max_train_patches = value;
+        set_source(sources, "max_train_patches", ConfigSource::Config);
+    }
+    if let Some(value) = config.anomaly_threshold_quantile {
+        args.anomaly_threshold_quantile = value;
+        set_source(sources, "anomaly_threshold_quantile", ConfigSource::Config);
+    }
     if let Some(value) = config.population {
         args.evolution_population = value;
         set_source(sources, "evolution_population", ConfigSource::Config);
@@ -584,6 +619,7 @@ fn config_report_value(args: &Args, field: &str) -> String {
         "format" => output_format_name(args.format).to_string(),
         "data_path" => option_string(&args.data_path),
         "eval_data_path" => option_string(&args.eval_data_path),
+        "dataset_config_path" => option_string(&args.dataset_config_path),
         "out_path" => option_string(&args.out_path),
         "report_out_path" => option_string(&args.report_out_path),
         "model_path" => option_string(&args.model_path),
@@ -644,6 +680,10 @@ fn config_report_value(args: &Args, field: &str) -> String {
         "debug_limit" => args.debug_limit.to_string(),
         "debug_samples" => args.debug_samples.as_str().to_string(),
         "debug_neighbors" => args.debug_neighbors.to_string(),
+        "patch_size" => args.patch_size.to_string(),
+        "patch_stride" => args.patch_stride.to_string(),
+        "max_train_patches" => args.max_train_patches.to_string(),
+        "anomaly_threshold_quantile" => args.anomaly_threshold_quantile.to_string(),
         "evolution_population" => args.evolution_population.to_string(),
         "evolution_generations" => args.evolution_generations.to_string(),
         "evolution_elite_count" => args.evolution_elite_count.to_string(),

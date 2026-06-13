@@ -179,6 +179,59 @@ cargo run --bin research-bench -- panc-image-folder --data C:\path\to\my-images 
 cargo run --bin research-bench -- centroid-image-folder --data C:\path\to\my-images --image-size 64 --image-features rich
 ```
 
+For industrial datasets, a single class-folder root is often too rigid. Use an
+image manifest when one logical class is spread across multiple folders, or
+when train/eval splits need explicit control:
+
+```json
+{
+  "version": 1,
+  "root": "C:/datasets/my-inspection-dataset",
+  "train": {
+    "normal": ["train/good-camera-a", "train/good-camera-b"],
+    "scratch": ["train/scratch-small", "train/scratch-large"]
+  },
+  "eval": {
+    "normal": "eval/good",
+    "scratch": ["eval/scratch-small", "eval/scratch-large"]
+  }
+}
+```
+
+Run supervised PANN/PANC/baseline commands from that manifest:
+
+```powershell
+cargo run --release --bin research-bench -- pann-image-manifest --dataset-config configs\image-manifest-supervised.example.json --image-size 64 --image-features rich-texture --epochs 12 --intervals 8 --format json
+cargo run --release --bin research-bench -- panc-image-manifest --dataset-config configs\image-manifest-supervised.example.json --image-size 64 --image-features rich-texture --top-k 3 --format json
+cargo run --release --bin research-bench -- centroid-image-manifest --dataset-config configs\image-manifest-supervised.example.json --image-size 64 --image-features rich-texture --format json
+```
+
+MVTec-style industrial anomaly datasets are different: `train/good` usually
+contains only normal images, while defect images live under `test/*`. For that
+case use the normal-only patch scanner:
+
+```powershell
+cargo run --release --bin research-bench -- panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --image-size 16 --image-features pixels --patch-size 224 --patch-stride 224 --max-train-patches 512 --top-k 1 --report-out reports\mvtec-metal-nut-patch-scan.json --debug-out reports\mvtec-metal-nut-patch-debug --format json
+```
+
+Patch scanner flow:
+
+```text
+train/good images -> normal patch library
+held-out good images -> anomaly threshold calibration
+test images -> patch anomaly scores -> image score + optional mask IoU
+```
+
+For MVTec category roots, `panc-patch-scan --data` auto-detects:
+
+```text
+category/
+  train/good/
+  test/good/
+  test/<defect-type>/
+  ground_truth/<defect-type>/
+```
+
 Long benchmark commands can be moved into a JSON config file. Defaults are
 loaded first, the config file overrides those defaults, and explicit CLI flags
 override the config. The config report is printed to stderr so JSON/CSV output

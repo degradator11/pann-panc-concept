@@ -17,6 +17,7 @@ pub struct Args {
     pub format: OutputFormat,
     pub data_path: Option<String>,
     pub eval_data_path: Option<String>,
+    pub dataset_config_path: Option<String>,
     pub out_path: Option<String>,
     pub report_out_path: Option<String>,
     pub model_path: Option<String>,
@@ -49,6 +50,10 @@ pub struct Args {
     pub debug_limit: usize,
     pub debug_samples: DebugSamples,
     pub debug_neighbors: usize,
+    pub patch_size: u32,
+    pub patch_stride: u32,
+    pub max_train_patches: usize,
+    pub anomaly_threshold_quantile: f64,
     pub evolution_population: usize,
     pub evolution_generations: usize,
     pub evolution_elite_count: usize,
@@ -94,7 +99,7 @@ impl DebugSamples {
     }
 }
 
-const USAGE: &str = "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder|evolved-panc-image-folder> [--config path|--config.location=path] [--format json|csv] [--data path] [--eval-data path] [--out path] [--report-out path] [--model path] [--image path] [--search-artifact path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--panc-threshold f] [--panc-jaccard-weight f] [--panc-active-blocks 0xffff] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]";
+const USAGE: &str = "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-image-manifest|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-image-manifest|panc-patch-scan|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-image-manifest|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder|evolved-panc-image-folder> [--config path|--config.location=path] [--format json|csv] [--data path] [--eval-data path] [--dataset-config path] [--out path] [--report-out path] [--model path] [--image path] [--search-artifact path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--panc-threshold f] [--panc-jaccard-weight f] [--panc-active-blocks 0xffff] [--patch-size n] [--patch-stride n] [--max-train-patches n] [--anomaly-threshold-quantile f] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]";
 
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     parse_args_from(env::args().skip(1))
@@ -159,6 +164,7 @@ fn default_args(command: String) -> Args {
         format: OutputFormat::Json,
         data_path: None,
         eval_data_path: None,
+        dataset_config_path: None,
         out_path: None,
         report_out_path: None,
         model_path: None,
@@ -191,6 +197,10 @@ fn default_args(command: String) -> Args {
         debug_limit: 50,
         debug_samples: DebugSamples::Misclassified,
         debug_neighbors: 5,
+        patch_size: 96,
+        patch_stride: 48,
+        max_train_patches: 4096,
+        anomaly_threshold_quantile: 0.95,
         evolution_population: 32,
         evolution_generations: 20,
         evolution_elite_count: 4,
@@ -231,6 +241,23 @@ fn apply_cli_flags(
             "--eval-data" => {
                 args.eval_data_path = Some(next_value(raw, &mut index, flag)?);
                 set_source(sources, "eval_data_path", ConfigSource::Cli);
+            }
+            "--dataset-config" | "--dataset-config.location" | "--dataset-config-location" => {
+                args.dataset_config_path = Some(next_value(raw, &mut index, flag)?);
+                set_source(sources, "dataset_config_path", ConfigSource::Cli);
+            }
+            other
+                if other.starts_with("--dataset-config=")
+                    || other.starts_with("--dataset-config.location=") =>
+            {
+                args.dataset_config_path = Some(
+                    other
+                        .split_once('=')
+                        .map(|(_, value)| value)
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+                set_source(sources, "dataset_config_path", ConfigSource::Cli);
             }
             "--out" => {
                 args.out_path = Some(next_value(raw, &mut index, flag)?);
@@ -382,6 +409,23 @@ fn apply_cli_flags(
                 args.debug_neighbors = next_value(raw, &mut index, flag)?.parse::<usize>()?;
                 set_source(sources, "debug_neighbors", ConfigSource::Cli);
             }
+            "--patch-size" => {
+                args.patch_size = next_value(raw, &mut index, flag)?.parse::<u32>()?;
+                set_source(sources, "patch_size", ConfigSource::Cli);
+            }
+            "--patch-stride" => {
+                args.patch_stride = next_value(raw, &mut index, flag)?.parse::<u32>()?;
+                set_source(sources, "patch_stride", ConfigSource::Cli);
+            }
+            "--max-train-patches" => {
+                args.max_train_patches = next_value(raw, &mut index, flag)?.parse::<usize>()?;
+                set_source(sources, "max_train_patches", ConfigSource::Cli);
+            }
+            "--anomaly-threshold-quantile" => {
+                args.anomaly_threshold_quantile =
+                    next_value(raw, &mut index, flag)?.parse::<f64>()?;
+                set_source(sources, "anomaly_threshold_quantile", ConfigSource::Cli);
+            }
             "--population" => {
                 args.evolution_population = next_value(raw, &mut index, flag)?.parse::<usize>()?;
                 set_source(sources, "evolution_population", ConfigSource::Cli);
@@ -448,6 +492,8 @@ fn apply_cli_flags(
             other
                 if other.starts_with("--config=")
                     || other.starts_with("--config.location=")
+                    || other.starts_with("--dataset-config=")
+                    || other.starts_with("--dataset-config.location=")
                     || other.starts_with("--search-artifact=")
                     || other.starts_with("--search-artifact.location=") => {}
             other if !other.starts_with("--") => {
@@ -609,6 +655,13 @@ pub fn required_data_path(args: &Args) -> Result<&str, Box<dyn Error>> {
     args.data_path
         .as_deref()
         .ok_or_else(|| "--data path is required for image-folder benchmarks".into())
+}
+
+pub fn required_dataset_config_path(args: &Args) -> Result<&str, Box<dyn Error>> {
+    args.dataset_config_path
+        .as_deref()
+        .or(args.data_path.as_deref())
+        .ok_or_else(|| "--dataset-config path is required".into())
 }
 
 pub fn required_out_path(args: &Args) -> Result<&str, Box<dyn Error>> {

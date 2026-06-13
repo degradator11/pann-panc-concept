@@ -1,0 +1,16 @@
+{
+  "command": "panc-patch-scan",
+  "data": "C:/datasets/industrial/metal_nut",
+  "format": "json",
+  "report_out": "reports/mvtec-metal-nut-patch-scan.json",
+  "debug_out": "reports/mvtec-metal-nut-patch-debug",
+  "image_size": 16,
+  "image_features": "pixels",
+  "image_resize": "stretch",
+  "patch_size": 224,
+  "patch_stride": 224,
+  "max_train_patches": 512,
+  "top_k": 1,
+  "anomaly_threshold_quantile": 0.95,
+  "seed": 42
+}

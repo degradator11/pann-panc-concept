@@ -16,6 +16,7 @@ pub enum CommandOutput {
     Matrix(MatrixReport),
     LearningCurve(LearningCurveReport),
     Evolution(EvolutionReport),
+    PatchScan(PatchScanReport),
 }
 
 #[derive(Debug, Serialize)]
@@ -259,6 +260,52 @@ pub struct EvolutionGenerationRow {
     pub active_block_count: usize,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PatchScanReport {
+    pub model: String,
+    pub dataset: String,
+    pub dataset_config_path: Option<String>,
+    pub data_path: Option<String>,
+    pub image_features: String,
+    pub image_resize: String,
+    pub patch_size: u32,
+    pub patch_stride: u32,
+    pub image_size: u32,
+    pub max_train_patches: usize,
+    pub reference_images: usize,
+    pub calibration_images: usize,
+    pub reference_patches: usize,
+    pub eval_images: usize,
+    pub normal_eval_images: usize,
+    pub anomaly_eval_images: usize,
+    pub threshold_quantile: f64,
+    pub anomaly_threshold: f64,
+    pub image_accuracy: f64,
+    pub normal_accuracy: f64,
+    pub anomaly_recall: f64,
+    pub image_auroc: f64,
+    pub train_ms: u128,
+    pub inference_ms: u128,
+    pub memory_bytes: usize,
+    pub mask_iou_mean: Option<f64>,
+    pub results: Vec<PatchScanImageResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PatchScanImageResult {
+    pub path: String,
+    pub label: String,
+    pub source: String,
+    pub expected_anomaly: bool,
+    pub predicted_anomaly: bool,
+    pub score: f64,
+    pub max_patch_score: f64,
+    pub mean_top_patch_score: f64,
+    pub patch_count: usize,
+    pub mask_path: Option<String>,
+    pub mask_iou: Option<f64>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClassificationMetrics {
     pub accuracy: f64,
@@ -429,6 +476,12 @@ pub fn write_output(output: &CommandOutput, format: OutputFormat) -> Result<(), 
         (CommandOutput::Evolution(report), OutputFormat::Csv) => {
             write_evolution_history_csv(std::io::stdout(), &report.rows)?;
         }
+        (CommandOutput::PatchScan(report), OutputFormat::Json) => {
+            println!("{}", serde_json::to_string_pretty(report)?);
+        }
+        (CommandOutput::PatchScan(report), OutputFormat::Csv) => {
+            write_patch_scan_results_csv(std::io::stdout(), &report.results)?;
+        }
     }
     Ok(())
 }
@@ -451,6 +504,7 @@ pub fn save_output_json(
         CommandOutput::Matrix(report) => serde_json::to_string_pretty(report)?,
         CommandOutput::LearningCurve(report) => serde_json::to_string_pretty(report)?,
         CommandOutput::Evolution(report) => serde_json::to_string_pretty(report)?,
+        CommandOutput::PatchScan(report) => serde_json::to_string_pretty(report)?,
     };
     fs::write(path, json)?;
     Ok(())
@@ -483,6 +537,18 @@ pub fn write_matrix_summaries_csv<W: Write>(
 pub fn write_evolution_history_csv<W: Write>(
     writer: W,
     rows: &[EvolutionGenerationRow],
+) -> Result<(), Box<dyn Error>> {
+    let mut writer = csv::Writer::from_writer(writer);
+    for row in rows {
+        writer.serialize(row)?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
+pub fn write_patch_scan_results_csv<W: Write>(
+    writer: W,
+    rows: &[PatchScanImageResult],
 ) -> Result<(), Box<dyn Error>> {
     let mut writer = csv::Writer::from_writer(writer);
     for row in rows {

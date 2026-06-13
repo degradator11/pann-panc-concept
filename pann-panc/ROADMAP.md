@@ -16,6 +16,8 @@ The prototype can:
 - load external embedding CSVs for PANN/PANC/baseline benchmarks
 - run CPU-parallel genetic search for PANC-like binary comparator settings
 - load CSV/vector data and class-folder image datasets
+- load explicit image dataset manifests where each class can point to one or
+  many directories per split
 - use deterministic train/test splits
 - use separate image train/eval folders through `--eval-data`
 - skip corrupt image files during folder benchmarks
@@ -50,6 +52,8 @@ not artifact persistence or simply running more epochs.
 - External embedding CSV benchmark commands for precomputed pretrained vectors
 - Small Iris CSV committed locally
 - Image-folder pipeline for PNG/JPEG datasets
+- Explicit image manifest loader for supervised train/eval datasets with
+  multiple source folders per class
 - Corrupt image skip behavior for folder benchmarks
 - Handcrafted image features:
   - raw grayscale pixels
@@ -78,6 +82,8 @@ not artifact persistence or simply running more epochs.
 - Failure-analysis report v2 with ranked wrong examples, image buckets, resize
   sensitivity, and nearest training examples
 - README dataset links and run instructions
+- MVTec-style normal-only industrial patch scanner, including optional mask IoU
+  and per-image debug CSV output
 
 ## Current Working Interpretation
 
@@ -169,6 +175,78 @@ introduce or preserve enough bias/background that PANN becomes strongly
 dog-biased. Next experiments should compare larger crop expansion,
 `--background solid`, `--background blur`, lower/higher confidence thresholds,
 and possibly YOLO segmentation masks.
+
+## Implemented Milestone: Flexible Industrial Datasets
+
+Goal: support industrial datasets where one logical class is spread across
+multiple folders, and support anomaly datasets where training has only normal
+images while evaluation has many defect folders.
+
+Implemented additions:
+
+- `--dataset-config` / `--dataset-config.location` image manifests
+- manifest commands:
+  - `pann-image-manifest`
+  - `panc-image-manifest`
+  - `centroid-image-manifest`
+- manifest format where each split/class can be either one path or many paths
+- recursive image loading for manifest source directories
+- `panc-patch-scan` for MVTec-style `train/good`, `test/*`,
+  `ground_truth/*` category roots
+- automatic MVTec category detection when `--data` points at one category root
+- normal-patch reference library, held-out-good threshold calibration, anomaly
+  scoring, image-level metrics, AUROC, and optional mask IoU
+
+Supervised manifest use case:
+
+```json
+{
+  "version": 1,
+  "root": "C:/datasets/my-inspection-dataset",
+  "train": {
+    "normal": ["train/good-camera-a", "train/good-camera-b"],
+    "scratch": ["train/scratch-small", "train/scratch-large"]
+  },
+  "eval": {
+    "normal": "eval/good",
+    "scratch": ["eval/scratch-small", "eval/scratch-large"]
+  }
+}
+```
+
+MVTec patch-scan command used for smoke testing:
+
+```powershell
+cargo run --release --bin research-bench -- panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --image-size 16 --image-features rich-edge --patch-size 224 --patch-stride 224 --max-train-patches 256 --top-k 1 --report-out reports\mvtec-metal-nut-patch-rich-edge-smoke.json --format json
+```
+
+Local MVTec subset inspected at `C:\Users\vilex\Downloads\industrial`:
+
+| Category | Train Normal | Eval Normal | Eval Defect |
+| --- | ---: | ---: | ---: |
+| bottle | 209 | 20 | 63 |
+| metal_nut | 220 | 22 | 93 |
+| screw | 320 | 41 | 119 |
+
+First `metal_nut` patch-scan results:
+
+| Features | Ref Patches | Accuracy | Normal Accuracy | Defect Recall | AUROC | Mean Mask IoU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| pixels | 512 | 42.6% | 90.9% | 31.2% | 56.5% | 12.2% |
+| rich-edge | 256 | 57.4% | 90.9% | 49.5% | 79.6% | 16.2% |
+
+Interpretation: the patch-scan path works end-to-end and `rich-edge` contains
+real anomaly ranking signal on `metal_nut` (AUROC about 0.80), but the current
+calibrated pass/fail threshold is too conservative and localization is still
+weak. This is an early anomaly baseline, not yet a production defect detector.
+
+Next industrial steps:
+
+- tune anomaly thresholds beyond a fixed good-image percentile
+- sweep patch size/stride/features on bottle, metal_nut, and screw
+- write heatmap PNG debug artifacts, not only CSV rows
+- compare whole-image supervised manifest runs against patch-scan anomaly runs
+- test OpenCV crop/background normalization before patch extraction
 
 ## Latest PANC-Like Genetic Search Snapshot
 
@@ -585,6 +663,8 @@ Useful datasets to test:
 
 - Microsoft/Kaggle Cats and Dogs: hard real-world binary task
 - Fruits-360: easier object classification with cleaner centered images
+- MVTec AD / local industrial subset: normal-only anomaly detection and defect
+  localization
 - Oxford-IIIT Pets: harder multi-class pet recognition
 - CIFAR-10: standard small-image benchmark, needs importer/converter
 - synthetic image patterns: regression tests and sanity checks
@@ -599,6 +679,10 @@ Useful datasets to test:
 - What is the most useful default benchmark matrix for fast iteration?
 - Does preserving aspect ratio help Cats/Dogs more than stretching?
 - Are failures concentrated in one class or in ambiguous/corrupt images?
+- For industrial anomaly detection, should thresholds be calibrated from
+  held-out normal images, defect examples, or a target false-positive rate?
+- Which patch descriptor and patch stride give useful defect localization
+  without losing the near-instant PANC-like scoring property?
 - At what point do classical features stop paying off compared with using an
   external embedding model as a fixed vectorizer?
 

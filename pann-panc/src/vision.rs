@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -169,6 +169,22 @@ pub enum VisionError {
     NoClassDirectories,
     #[error("image dataset contains no supported image files")]
     NoImages,
+    #[error("image dataset manifest has no {split} split")]
+    MissingManifestSplit { split: &'static str },
+    #[error("image dataset manifest split {split} contains no usable images")]
+    EmptyManifestSplit { split: &'static str },
+    #[error("manifest source path does not exist: {0}")]
+    MissingManifestSource(PathBuf),
+    #[error("failed to read image dataset manifest {path}: {source}")]
+    ReadManifest {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("failed to parse image dataset manifest {path}: {source}")]
+    ParseManifest {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
     #[error("failed to read directory {path}: {source}")]
     ReadDir {
         path: PathBuf,
@@ -187,6 +203,58 @@ pub struct ImageProcessingStep {
     pub image: image::DynamicImage,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ImageDatasetManifest {
+    pub version: Option<u32>,
+    pub name: Option<String>,
+    pub root: Option<PathBuf>,
+    pub train: Option<ManifestSplit>,
+    pub eval: Option<ManifestSplit>,
+    pub masks: Option<BTreeMap<String, ManifestSources>>,
+}
+
+pub type ManifestSplit = BTreeMap<String, ManifestSources>;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum ManifestSources {
+    One(PathBuf),
+    Many(Vec<PathBuf>),
+}
+
+impl ManifestSources {
+    pub fn paths(&self) -> Vec<PathBuf> {
+        match self {
+            Self::One(path) => vec![path.clone()],
+            Self::Many(paths) => paths.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageDatasetEntry {
+    pub path: PathBuf,
+    pub class_name: String,
+    pub source_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageManifestSplitDataset {
+    pub dataset: Dataset,
+    pub image_paths: Vec<PathBuf>,
+    pub entries: Vec<ImageDatasetEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageManifestDataset {
+    pub name: Option<String>,
+    pub manifest_path: PathBuf,
+    pub root: PathBuf,
+    pub train: ImageManifestSplitDataset,
+    pub eval: Option<ImageManifestSplitDataset>,
+    pub masks: BTreeMap<String, Vec<PathBuf>>,
+}
+
 pub fn load_image_as_vector(
     path: impl AsRef<Path>,
     config: ImageVectorConfig,
@@ -197,6 +265,14 @@ pub fn load_image_as_vector(
         path: path.to_path_buf(),
         source,
     })?;
+    Ok(features::image_to_vector(image, config))
+}
+
+pub fn dynamic_image_to_vector(
+    image: image::DynamicImage,
+    config: ImageVectorConfig,
+) -> Result<Vec<f64>, VisionError> {
+    validate_config(config)?;
     Ok(features::image_to_vector(image, config))
 }
 
@@ -224,6 +300,64 @@ pub fn load_image_folder(
     config: ImageVectorConfig,
 ) -> Result<Dataset, VisionError> {
     Ok(load_image_folder_with_paths(root, config)?.dataset)
+}
+
+pub fn load_image_manifest(
+    manifest_path: impl AsRef<Path>,
+    config: ImageVectorConfig,
+) -> Result<ImageManifestDataset, VisionError> {
+    validate_config(config)?;
+    let manifest_path = manifest_path.as_ref();
+    let text = fs::read_to_string(manifest_path).map_err(|source| VisionError::ReadManifest {
+        path: manifest_path.to_path_buf(),
+        source,
+    })?;
+    let manifest = serde_json::from_str::<ImageDatasetManifest>(&text).map_err(|source| {
+        VisionError::ParseManifest {
+            path: manifest_path.to_path_buf(),
+            source,
+        }
+    })?;
+    load_image_manifest_from_value(manifest_path, manifest, config)
+}
+
+pub fn load_image_manifest_from_value(
+    manifest_path: impl AsRef<Path>,
+    manifest: ImageDatasetManifest,
+    config: ImageVectorConfig,
+) -> Result<ImageManifestDataset, VisionError> {
+    validate_config(config)?;
+    let manifest_path = manifest_path.as_ref();
+    let root = manifest
+        .root
+        .clone()
+        .map(|path| resolve_manifest_path(manifest_path, None, &path))
+        .unwrap_or_else(|| {
+            manifest_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
+    let train_split = manifest
+        .train
+        .as_ref()
+        .ok_or(VisionError::MissingManifestSplit { split: "train" })?;
+    let train = load_manifest_split(manifest_path, &root, train_split, "train", config)?;
+    let eval = manifest
+        .eval
+        .as_ref()
+        .map(|split| load_manifest_split(manifest_path, &root, split, "eval", config))
+        .transpose()?;
+    let masks = resolve_manifest_masks(manifest_path, &root, manifest.masks.as_ref())?;
+
+    Ok(ImageManifestDataset {
+        name: manifest.name,
+        manifest_path: manifest_path.to_path_buf(),
+        root,
+        train,
+        eval,
+        masks,
+    })
 }
 
 pub fn load_image_folder_with_paths(
@@ -417,7 +551,7 @@ fn validate_config(config: ImageVectorConfig) -> Result<(), VisionError> {
     }
 }
 
-fn supported_image_path(path: &Path) -> bool {
+pub fn supported_image_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| {
@@ -427,6 +561,152 @@ fn supported_image_path(path: &Path) -> bool {
             )
         })
         .unwrap_or(false)
+}
+
+fn load_manifest_split(
+    manifest_path: &Path,
+    root: &Path,
+    split: &ManifestSplit,
+    split_name: &'static str,
+    config: ImageVectorConfig,
+) -> Result<ImageManifestSplitDataset, VisionError> {
+    let mut samples = Vec::new();
+    let mut labels = Vec::new();
+    let mut class_names = Vec::new();
+    let mut image_paths = Vec::new();
+    let mut entries = Vec::new();
+
+    for (class_name, sources) in split {
+        let label = class_names.len();
+        let sample_count_before = samples.len();
+        let mut skipped_images = 0usize;
+        for source in sources.paths() {
+            let resolved = resolve_manifest_path(manifest_path, Some(root), &source);
+            let source_name = source_name(&resolved);
+            for image_path in manifest_image_files(&resolved)? {
+                match load_image_as_vector(&image_path, config) {
+                    Ok(sample) => {
+                        samples.push(sample);
+                        labels.push(label);
+                        image_paths.push(image_path.clone());
+                        entries.push(ImageDatasetEntry {
+                            path: image_path,
+                            class_name: class_name.clone(),
+                            source_name: source_name.clone(),
+                        });
+                    }
+                    Err(VisionError::DecodeImage { .. }) => skipped_images += 1,
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+
+        if samples.len() > sample_count_before {
+            class_names.push(class_name.clone());
+        }
+
+        if skipped_images > 0 {
+            eprintln!(
+                "warning: skipped {skipped_images} unreadable images in manifest split {split_name} class {class_name}"
+            );
+        }
+    }
+
+    if samples.is_empty() {
+        return Err(VisionError::EmptyManifestSplit { split: split_name });
+    }
+
+    Ok(ImageManifestSplitDataset {
+        dataset: Dataset {
+            samples,
+            labels,
+            class_names,
+        },
+        image_paths,
+        entries,
+    })
+}
+
+fn manifest_image_files(source: &Path) -> Result<Vec<PathBuf>, VisionError> {
+    if !source.exists() {
+        return Err(VisionError::MissingManifestSource(source.to_path_buf()));
+    }
+    if source.is_file() {
+        return if supported_image_path(source) {
+            Ok(vec![source.to_path_buf()])
+        } else {
+            Ok(Vec::new())
+        };
+    }
+
+    let mut files = Vec::new();
+    collect_manifest_images(source, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_manifest_images(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), VisionError> {
+    let entries = fs::read_dir(path)
+        .map_err(|source| VisionError::ReadDir {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| VisionError::ReadDir {
+            path: path.to_path_buf(),
+            source,
+        })?;
+
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_manifest_images(&path, files)?;
+        } else if supported_image_path(&path) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn resolve_manifest_masks(
+    manifest_path: &Path,
+    root: &Path,
+    masks: Option<&BTreeMap<String, ManifestSources>>,
+) -> Result<BTreeMap<String, Vec<PathBuf>>, VisionError> {
+    let Some(masks) = masks else {
+        return Ok(BTreeMap::new());
+    };
+    masks
+        .iter()
+        .map(|(name, sources)| {
+            let paths = sources
+                .paths()
+                .into_iter()
+                .map(|path| resolve_manifest_path(manifest_path, Some(root), &path))
+                .collect::<Vec<_>>();
+            Ok((name.clone(), paths))
+        })
+        .collect()
+}
+
+fn resolve_manifest_path(manifest_path: &Path, root: Option<&Path>, value: &Path) -> PathBuf {
+    if value.is_absolute() {
+        return value.to_path_buf();
+    }
+    if let Some(root) = root {
+        return root.join(value);
+    }
+    manifest_path
+        .parent()
+        .map(|parent| parent.join(value))
+        .unwrap_or_else(|| value.to_path_buf())
+}
+
+fn source_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 #[cfg(test)]
@@ -685,6 +965,59 @@ mod tests {
         assert_eq!(dataset.samples.len(), 2);
         assert_eq!(dataset.class_names, vec!["dark", "light"]);
         assert_eq!(dataset.samples[0].len(), 4);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn image_manifest_loader_accepts_multiple_directories_per_class() {
+        let root = std::env::temp_dir().join(format!(
+            "progress_ai_manifest_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let normal_a = root.join("train").join("normal-a");
+        let normal_b = root.join("train").join("normal-b");
+        let defect = root.join("eval").join("defect");
+        fs::create_dir_all(&normal_a).unwrap();
+        fs::create_dir_all(&normal_b).unwrap();
+        fs::create_dir_all(&defect).unwrap();
+
+        let dark = GrayImage::from_pixel(4, 4, Luma([0]));
+        let light = GrayImage::from_pixel(4, 4, Luma([255]));
+        dark.save(normal_a.join("a.png")).unwrap();
+        dark.save(normal_b.join("b.png")).unwrap();
+        light.save(defect.join("d.png")).unwrap();
+
+        let manifest_path = root.join("manifest.json");
+        fs::write(
+            &manifest_path,
+            r#"{
+                "version": 1,
+                "root": ".",
+                "train": {
+                    "normal": ["train/normal-a", "train/normal-b"]
+                },
+                "eval": {
+                    "defect": "eval/defect"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = load_image_manifest(&manifest_path, ImageVectorConfig::new(2, 2)).unwrap();
+
+        assert_eq!(loaded.train.dataset.class_names, vec!["normal"]);
+        assert_eq!(loaded.train.dataset.samples.len(), 2);
+        assert_eq!(
+            loaded.eval.as_ref().unwrap().dataset.class_names,
+            vec!["defect"]
+        );
+        assert_eq!(loaded.eval.as_ref().unwrap().dataset.samples.len(), 1);
+        assert_eq!(loaded.train.entries[0].source_name, "normal-a");
+        assert_eq!(loaded.train.entries[1].source_name, "normal-b");
         fs::remove_dir_all(root).unwrap();
     }
 }

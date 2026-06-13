@@ -41,6 +41,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         "pann-image-folder" => folder_commands::run_pann_image_folder(args),
+        "pann-image-manifest" => folder_commands::run_pann_image_manifest(args),
         "pann-embedding-csv" => run_pann(
             load_embedding_csv(required_data_path_for_run(args)?)?,
             "embedding-csv",
@@ -59,6 +60,8 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         "panc-image-folder" => folder_commands::run_panc_image_folder(args),
+        "panc-image-manifest" => folder_commands::run_panc_image_manifest(args),
+        "panc-patch-scan" => super::patch_scan::run_panc_patch_scan(args),
         "panc-embedding-csv" => run_panc(
             load_embedding_csv(required_data_path_for_run(args)?)?,
             "embedding-csv",
@@ -83,6 +86,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
             args,
         )
         .map(CommandOutput::Metrics),
+        "centroid-image-manifest" => folder_commands::run_centroid_image_manifest(args),
         "centroid-embedding-csv" => run_centroid(
             load_embedding_csv(required_data_path_for_run(args)?)?,
             "embedding-csv",
@@ -90,7 +94,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         command => Err(format!(
-            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, pann-embedding-csv, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, panc-embedding-csv, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, centroid-embedding-csv, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, pann-learning-curve, evolve-panc-image-folder, or evolved-panc-image-folder"
+            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, pann-image-manifest, pann-embedding-csv, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, panc-image-manifest, panc-patch-scan, panc-embedding-csv, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, centroid-image-manifest, centroid-embedding-csv, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, pann-learning-curve, evolve-panc-image-folder, or evolved-panc-image-folder"
         )
         .into()),
     }

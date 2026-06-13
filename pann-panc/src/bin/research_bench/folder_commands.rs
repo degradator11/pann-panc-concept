@@ -2,18 +2,22 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use progress_ai::baseline::NearestCentroidClassifier;
 use progress_ai::panc::{PancComparator, SimilarityMetric};
 use progress_ai::pann::{Distributor, IntervalStrategy, PannConfig, PannModel, argmax};
 use progress_ai::preprocess::{
     Dataset, min_max_ranges, min_max_scale, one_hot_labels, train_test_split_indices,
 };
-use progress_ai::vision::{ImageResizeMode, load_image_as_vector, load_image_folder_with_paths};
+use progress_ai::vision::{
+    ImageManifestDataset, ImageResizeMode, load_image_as_vector, load_image_folder_with_paths,
+    load_image_manifest,
+};
 
 use super::{
     Args, BenchMetrics, ClassScore, CommandOutput, DebugReference, ImageEvalDebugData,
     ImageEvalPrediction, ResizePrediction, SampleResizeComparison, classification_metrics,
-    correction_mode_name, image_config, required_data_path, selected_prediction_indices,
-    write_image_eval_debug_report,
+    correction_mode_name, image_config, required_data_path, required_dataset_config_path,
+    selected_prediction_indices, write_image_eval_debug_report,
 };
 
 struct PathSplit {
@@ -130,6 +134,88 @@ pub fn run_pann_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Error
     }))
 }
 
+pub fn run_pann_image_manifest(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
+    let manifest_path = required_dataset_config_path(args)?;
+    let loaded = load_image_manifest(manifest_path, image_config(args))?;
+    let split = manifest_split(&loaded, args)?;
+    let class_names = loaded.train.dataset.class_names;
+    let ranges = min_max_ranges(&split.train_samples);
+    let train_samples = min_max_scale(&split.train_samples, &ranges);
+    let test_samples = min_max_scale(&split.test_samples, &ranges);
+    let targets = one_hot_labels(&split.train_labels, class_names.len());
+
+    let trained = train_pann(args, &train_samples, &split.train_labels, &targets)?;
+
+    let inference_start = Instant::now();
+    let test_predictions = pann_prediction_details(&trained.model, &test_samples, &class_names)?;
+    let inference_ms = inference_start.elapsed().as_millis();
+    let test_prediction_indexes = test_predictions
+        .iter()
+        .map(|prediction| prediction.index)
+        .collect::<Vec<_>>();
+    let test_diagnostics =
+        classification_metrics(&split.test_labels, &test_prediction_indexes, &class_names);
+
+    if let Some(debug_out_path) = args.debug_out_path.as_deref() {
+        let prediction_records = image_eval_predictions(
+            &split.test_labels,
+            &test_predictions,
+            &split.test_paths,
+            &class_names,
+        );
+        let selected =
+            selected_prediction_indices(&prediction_records, args.debug_samples, args.debug_limit);
+        let resize_comparisons = pann_resize_comparisons(
+            &selected,
+            &split.test_paths,
+            &ranges,
+            &trained.model,
+            &class_names,
+            args,
+        )?;
+        let references = train_references_from_split(&split, &train_samples, &class_names);
+        write_image_eval_debug_report(&ImageEvalDebugData {
+            out_path: debug_out_path,
+            model: "pann",
+            data_path: manifest_path,
+            model_path: "in-memory:pann-image-manifest",
+            image_config: image_config(args),
+            image_features: args.image_features.as_str(),
+            image_resize: args.image_resize.as_str(),
+            accuracy: test_diagnostics.accuracy,
+            inference_ms,
+            memory_bytes: trained.model.memory_bytes_estimate(),
+            per_class_accuracy: &test_diagnostics.per_class_accuracy,
+            confusion_matrix: &test_diagnostics.confusion_matrix,
+            predictions: &prediction_records,
+            scaled_samples: &test_samples,
+            resize_comparisons: &resize_comparisons,
+            references: &references,
+            debug_limit: args.debug_limit,
+            debug_samples: args.debug_samples,
+            debug_neighbors: args.debug_neighbors,
+        })?;
+    }
+
+    Ok(CommandOutput::Metrics(BenchMetrics {
+        model: "pann".to_string(),
+        dataset: "image-manifest".to_string(),
+        image_features: args.image_features.as_str().to_string(),
+        image_resize: args.image_resize.as_str().to_string(),
+        train_accuracy: trained.train_accuracy,
+        test_accuracy: test_diagnostics.accuracy,
+        train_ms: trained.train_ms,
+        inference_ms,
+        memory_bytes: trained.model.memory_bytes_estimate(),
+        epochs: args.epochs,
+        interval_count: args.intervals,
+        distributor: "triangular".to_string(),
+        correction_mode: correction_mode_name(args.correction_mode).to_string(),
+        per_class_accuracy: test_diagnostics.per_class_accuracy,
+        confusion_matrix: test_diagnostics.confusion_matrix,
+    }))
+}
+
 pub fn run_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
     let data_path = required_data_path(args)?;
     let loaded = load_image_folder_with_paths(data_path, image_config(args))?;
@@ -220,6 +306,131 @@ pub fn run_panc_image_folder(args: &Args) -> Result<CommandOutput, Box<dyn Error
     }))
 }
 
+pub fn run_panc_image_manifest(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
+    let manifest_path = required_dataset_config_path(args)?;
+    let loaded = load_image_manifest(manifest_path, image_config(args))?;
+    let split = manifest_split(&loaded, args)?;
+    let class_names = loaded.train.dataset.class_names;
+    let ranges = min_max_ranges(&split.train_samples);
+    let train_samples = min_max_scale(&split.train_samples, &ranges);
+    let test_samples = min_max_scale(&split.test_samples, &ranges);
+
+    let trained = train_panc(args, &train_samples, &split.train_labels)?;
+
+    let inference_start = Instant::now();
+    let test_predictions =
+        panc_prediction_details(&trained.comparator, &test_samples, args.top_k, &class_names)?;
+    let inference_ms = inference_start.elapsed().as_millis();
+    let test_prediction_indexes = test_predictions
+        .iter()
+        .map(|prediction| prediction.index)
+        .collect::<Vec<_>>();
+    let test_diagnostics =
+        classification_metrics(&split.test_labels, &test_prediction_indexes, &class_names);
+
+    if let Some(debug_out_path) = args.debug_out_path.as_deref() {
+        let prediction_records = image_eval_predictions(
+            &split.test_labels,
+            &test_predictions,
+            &split.test_paths,
+            &class_names,
+        );
+        let selected =
+            selected_prediction_indices(&prediction_records, args.debug_samples, args.debug_limit);
+        let resize_comparisons = panc_resize_comparisons(
+            &selected,
+            &split.test_paths,
+            &ranges,
+            &trained.comparator,
+            args.top_k,
+            &class_names,
+            args,
+        )?;
+        let references = train_references_from_split(&split, &train_samples, &class_names);
+        write_image_eval_debug_report(&ImageEvalDebugData {
+            out_path: debug_out_path,
+            model: "panc_like",
+            data_path: manifest_path,
+            model_path: "in-memory:panc-image-manifest",
+            image_config: image_config(args),
+            image_features: args.image_features.as_str(),
+            image_resize: args.image_resize.as_str(),
+            accuracy: test_diagnostics.accuracy,
+            inference_ms,
+            memory_bytes: trained.memory_bytes,
+            per_class_accuracy: &test_diagnostics.per_class_accuracy,
+            confusion_matrix: &test_diagnostics.confusion_matrix,
+            predictions: &prediction_records,
+            scaled_samples: &test_samples,
+            resize_comparisons: &resize_comparisons,
+            references: &references,
+            debug_limit: args.debug_limit,
+            debug_samples: args.debug_samples,
+            debug_neighbors: args.debug_neighbors,
+        })?;
+    }
+
+    Ok(CommandOutput::Metrics(BenchMetrics {
+        model: "panc_like".to_string(),
+        dataset: "image-manifest".to_string(),
+        image_features: args.image_features.as_str().to_string(),
+        image_resize: args.image_resize.as_str().to_string(),
+        train_accuracy: trained.train_accuracy,
+        test_accuracy: test_diagnostics.accuracy,
+        train_ms: trained.train_ms,
+        inference_ms,
+        memory_bytes: trained.memory_bytes,
+        epochs: 0,
+        interval_count: 0,
+        distributor: "none".to_string(),
+        correction_mode: "top_k_euclidean_vote".to_string(),
+        per_class_accuracy: test_diagnostics.per_class_accuracy,
+        confusion_matrix: test_diagnostics.confusion_matrix,
+    }))
+}
+
+pub fn run_centroid_image_manifest(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
+    let manifest_path = required_dataset_config_path(args)?;
+    let loaded = load_image_manifest(manifest_path, image_config(args))?;
+    let split = manifest_split(&loaded, args)?;
+    let class_names = loaded.train.dataset.class_names;
+    let ranges = min_max_ranges(&split.train_samples);
+    let train_samples = min_max_scale(&split.train_samples, &ranges);
+    let test_samples = min_max_scale(&split.test_samples, &ranges);
+
+    let train_start = Instant::now();
+    let classifier =
+        NearestCentroidClassifier::fit(&train_samples, &split.train_labels, class_names.len())?;
+    let train_ms = train_start.elapsed().as_millis();
+
+    let inference_start = Instant::now();
+    let train_predictions = classifier.predict_batch(&train_samples)?;
+    let test_predictions = classifier.predict_batch(&test_samples)?;
+    let inference_ms = inference_start.elapsed().as_millis();
+    let train_diagnostics =
+        classification_metrics(&split.train_labels, &train_predictions, &class_names);
+    let test_diagnostics =
+        classification_metrics(&split.test_labels, &test_predictions, &class_names);
+
+    Ok(CommandOutput::Metrics(BenchMetrics {
+        model: "centroid".to_string(),
+        dataset: "image-manifest".to_string(),
+        image_features: args.image_features.as_str().to_string(),
+        image_resize: args.image_resize.as_str().to_string(),
+        train_accuracy: train_diagnostics.accuracy,
+        test_accuracy: test_diagnostics.accuracy,
+        train_ms,
+        inference_ms,
+        memory_bytes: classifier.memory_bytes_estimate(),
+        epochs: 0,
+        interval_count: 0,
+        distributor: "none".to_string(),
+        correction_mode: "nearest_centroid_euclidean".to_string(),
+        per_class_accuracy: test_diagnostics.per_class_accuracy,
+        confusion_matrix: test_diagnostics.confusion_matrix,
+    }))
+}
+
 fn train_pann(
     args: &Args,
     train_samples: &[Vec<f64>],
@@ -301,6 +512,32 @@ fn folder_split(
         test_samples: collect_samples(&dataset.samples, &test_indexes),
         test_labels: collect_labels(&dataset.labels, &test_indexes),
         test_paths: collect_paths(&paths, &test_indexes),
+    })
+}
+
+fn manifest_split(loaded: &ImageManifestDataset, args: &Args) -> Result<PathSplit, Box<dyn Error>> {
+    if let Some(eval) = &loaded.eval {
+        let eval_labels =
+            remap_labels_by_class_name(&eval.dataset, &loaded.train.dataset.class_names)?;
+        return Ok(PathSplit {
+            train_samples: loaded.train.dataset.samples.clone(),
+            train_labels: loaded.train.dataset.labels.clone(),
+            train_paths: loaded.train.image_paths.clone(),
+            test_samples: eval.dataset.samples.clone(),
+            test_labels: eval_labels,
+            test_paths: eval.image_paths.clone(),
+        });
+    }
+
+    let (test_indexes, train_indexes) =
+        train_test_split_indices(loaded.train.dataset.samples.len(), 0.2, args.seed);
+    Ok(PathSplit {
+        train_samples: collect_samples(&loaded.train.dataset.samples, &train_indexes),
+        train_labels: collect_labels(&loaded.train.dataset.labels, &train_indexes),
+        train_paths: collect_paths(&loaded.train.image_paths, &train_indexes),
+        test_samples: collect_samples(&loaded.train.dataset.samples, &test_indexes),
+        test_labels: collect_labels(&loaded.train.dataset.labels, &test_indexes),
+        test_paths: collect_paths(&loaded.train.image_paths, &test_indexes),
     })
 }
 
