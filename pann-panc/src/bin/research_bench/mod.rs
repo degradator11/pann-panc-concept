@@ -10,6 +10,7 @@ mod folder_commands;
 mod learning_curve;
 mod matrix;
 mod metrics;
+mod patch_debug;
 mod patch_evolve;
 mod patch_scan;
 mod run;

@@ -222,6 +222,26 @@ held-out good images -> anomaly threshold calibration
 test images -> patch anomaly scores -> image score + optional mask IoU
 ```
 
+With `--debug-out`, patch scan now writes a static inspection bundle:
+
+```text
+debug-out/
+  index.html
+  patch_scan_predictions.csv
+  patch_scan_patches.csv
+  samples/<sample>/
+    original.png
+    heatmap.png
+    overlay.png
+    predicted_mask.png
+    mask.png, when ground truth exists
+```
+
+`patch_scan_patches.csv` labels each patch with its score, predicted anomaly
+state, and mask overlap when a ground-truth mask exists. This is the quickest
+way to see whether high-scoring patches touch real defects or just object
+edges, lighting, or background.
+
 For MVTec category roots, `panc-patch-scan --data` auto-detects:
 
 ```text
@@ -246,7 +266,7 @@ cargo run --release --bin research-bench -- evolve-panc-patch-scan --data C:\Use
 Reuse the searched recipe in the normal scanner:
 
 ```powershell
-cargo run --release --bin research-bench -- panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --search-artifact models\metal-nut-patch-search.json --report-out reports\metal-nut-patch-search-reuse-report.json --format json
+cargo run --release --bin research-bench -- panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --search-artifact models\metal-nut-patch-search.json --report-out reports\metal-nut-patch-search-reuse-report.json --debug-out reports\metal-nut-patch-debug --debug-limit 12 --debug-samples all --format json
 ```
 
 The patch search artifact stores a recipe, not a trained patch library. Runtime

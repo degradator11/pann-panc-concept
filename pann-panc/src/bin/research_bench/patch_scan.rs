@@ -12,6 +12,7 @@ use progress_ai::vision::{
     dynamic_image_to_vector, load_image_manifest, load_image_manifest_from_value,
 };
 
+use super::patch_debug::{patch_mask_metrics, write_patch_debug};
 use super::{
     Args, CommandOutput, PatchScanImageResult, PatchScanReport, image_config, required_data_path,
 };
@@ -26,18 +27,18 @@ struct PatchVector {
 }
 
 #[derive(Debug, Clone)]
-struct ScoredPatch {
-    anomaly_score: f64,
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
+pub(super) struct ScoredPatch {
+    pub(super) anomaly_score: f64,
+    pub(super) x: u32,
+    pub(super) y: u32,
+    pub(super) width: u32,
+    pub(super) height: u32,
 }
 
 #[derive(Debug, Clone)]
-struct ScannedImage {
-    result: PatchScanImageResult,
-    patches: Vec<ScoredPatch>,
+pub(super) struct ScannedImage {
+    pub(super) result: PatchScanImageResult,
+    pub(super) patches: Vec<ScoredPatch>,
 }
 
 pub(super) struct PatchDatasetInput {
@@ -129,7 +130,7 @@ pub(super) fn run_patch_scan_report(
         all_eval_entries
     };
     let inference_start = Instant::now();
-    let scans = eval_entries
+    let mut scans = eval_entries
         .iter()
         .map(|entry| {
             let expected_anomaly = entry.class_name != normal_class;
@@ -148,33 +149,35 @@ pub(super) fn run_patch_scan_report(
         .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     let inference_ms = inference_start.elapsed().as_millis();
 
-    let mut results = scans
-        .into_iter()
-        .map(|mut scan| {
-            scan.result.predicted_anomaly = scan.result.score >= anomaly_threshold;
-            if let Some(mask_path) = scan.result.mask_path.clone() {
-                scan.result.mask_iou =
-                    mask_iou(Path::new(&mask_path), &scan.patches, anomaly_threshold).ok();
-            }
-            scan.result
-        })
-        .collect::<Vec<_>>();
-    results.sort_by(|left, right| {
+    for scan in &mut scans {
+        scan.result.predicted_anomaly = scan.result.score >= anomaly_threshold;
+        if let Some(mask_path) = scan.result.mask_path.clone() {
+            scan.result.mask_iou =
+                mask_iou(Path::new(&mask_path), &scan.patches, anomaly_threshold).ok();
+        }
+    }
+    scans.sort_by(|left, right| {
         right
+            .result
             .score
-            .total_cmp(&left.score)
-            .then_with(|| left.path.cmp(&right.path))
+            .total_cmp(&left.result.score)
+            .then_with(|| left.result.path.cmp(&right.result.path))
     });
 
     if let Some(debug_out) = args.debug_out_path.as_deref() {
-        write_patch_debug(debug_out, &results)?;
+        write_patch_debug(debug_out, &scans, anomaly_threshold, args)?;
     }
 
+    let results = scans
+        .iter()
+        .map(|scan| scan.result.clone())
+        .collect::<Vec<_>>();
     let image_accuracy = binary_accuracy(&results);
     let normal_accuracy = class_binary_accuracy(&results, false);
     let anomaly_recall = class_binary_accuracy(&results, true);
     let image_auroc = binary_auroc(&results);
     let mask_iou_mean = mean_option(results.iter().map(|result| result.mask_iou));
+    let patch_metrics = patch_mask_metrics(&scans, anomaly_threshold)?;
     let normal_eval_images = results
         .iter()
         .filter(|result| !result.expected_anomaly)
@@ -214,6 +217,17 @@ pub(super) fn run_patch_scan_report(
         normal_accuracy,
         anomaly_recall,
         image_auroc,
+        mask_patch_count: patch_metrics
+            .as_ref()
+            .map(|metrics| metrics.patch_count)
+            .unwrap_or(0),
+        mask_positive_patch_count: patch_metrics
+            .as_ref()
+            .map(|metrics| metrics.positive_patch_count)
+            .unwrap_or(0),
+        mask_patch_accuracy: patch_metrics.as_ref().map(|metrics| metrics.accuracy),
+        mask_patch_f1: patch_metrics.as_ref().map(|metrics| metrics.f1),
+        mask_patch_auroc: patch_metrics.as_ref().map(|metrics| metrics.auroc),
         train_ms,
         inference_ms,
         memory_bytes: reference_patches * feature_len * std::mem::size_of::<f64>(),
@@ -501,7 +515,12 @@ fn mask_iou(
     })
 }
 
-fn predicted_mask(width: u32, height: u32, patches: &[ScoredPatch], threshold: f64) -> GrayImage {
+pub(super) fn predicted_mask(
+    width: u32,
+    height: u32,
+    patches: &[ScoredPatch],
+    threshold: f64,
+) -> GrayImage {
     let mut mask = GrayImage::new(width, height);
     for patch in patches {
         if patch.anomaly_score < threshold {
@@ -605,20 +624,6 @@ fn mean_option(values: impl Iterator<Item = Option<f64>>) -> Option<f64> {
     } else {
         Some(values.iter().sum::<f64>() / values.len() as f64)
     }
-}
-
-fn write_patch_debug(
-    debug_out: &str,
-    results: &[PatchScanImageResult],
-) -> Result<(), Box<dyn Error>> {
-    let out = Path::new(debug_out);
-    fs::create_dir_all(out)?;
-    let mut writer = csv::Writer::from_path(out.join("patch_scan_predictions.csv"))?;
-    for result in results {
-        writer.serialize(result)?;
-    }
-    writer.flush()?;
-    Ok(())
 }
 
 pub(super) fn validate_patch_args(args: &Args) -> Result<(), Box<dyn Error>> {

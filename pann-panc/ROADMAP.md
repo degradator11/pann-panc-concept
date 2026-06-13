@@ -202,6 +202,14 @@ Implemented additions:
 - `panc-patch-scan --search-artifact ...` for reusing a searched patch recipe
 - tunable `--patch-score-fraction`, controlling how much of the suspicious
   patch tail becomes the whole-image anomaly score
+- heatmap debug output for patch scans:
+  - `index.html`
+  - `patch_scan_predictions.csv`
+  - `patch_scan_patches.csv`
+  - original image, heatmap, overlay, predicted mask, and ground-truth mask PNGs
+- mask-aware patch metrics:
+  - patch count and positive patch count
+  - patch-level accuracy/F1/AUROC using ground-truth mask overlap labels
 
 Supervised manifest use case:
 
@@ -281,13 +289,51 @@ too many false positives and reduced AUROC. Real search should use more
 population/generations and a wider recipe space, then compare holdout AUROC
 against the current 79.6% manual baseline.
 
+Full 100 population / 20 generation GS run on `metal_nut`:
+
+| Metric | Validation | Holdout |
+| --- | ---: | ---: |
+| Accuracy | 82.6% | 62.0% |
+| AUROC | 94.7% | 70.0% |
+| F1 | 88.2% | 73.7% |
+
+Best recipe:
+
+```text
+image_size=24, features=rich-hog, patch_size=160, patch_stride=224,
+max_train_patches=256, top_k=3, threshold_quantile=0.8,
+patch_score_fraction=0.05
+```
+
+Interpretation: this is validation overfit, not a real improvement. The
+manual `rich-edge` run still has the stronger honest AUROC reference.
+
+First heatmap/debug run using the searched recipe:
+
+| Metric | Value |
+| --- | ---: |
+| Image accuracy | 66.1% |
+| Normal accuracy | 54.5% |
+| Defect recall | 68.8% |
+| Image AUROC | 75.4% |
+| Mean mask IoU | 13.9% |
+| Patch-level mask AUROC | 75.2% |
+| Patch-level mask F1 | 44.8% |
+
+Interpretation: patch scores contain some mask-level signal, but localization
+is still broad and blocky. The current recipe often marks large object regions,
+not tight defect regions. This confirms that heatmaps/mask labels are necessary
+before tuning further.
+
 Next industrial steps:
 
-- run a larger `evolve-panc-patch-scan` search against `metal_nut`, then repeat
-  on `bottle` and `screw`
+- repeat patch-search/debug runs on `bottle` and `screw`
+- rerun `metal_nut` search only after changing the recipe space or fitness
+  target
 - tune anomaly thresholds beyond a fixed good-image percentile
 - sweep patch size/stride/features on bottle, metal_nut, and screw
-- write heatmap PNG debug artifacts, not only CSV rows
+- use heatmap/mask debug to decide whether failures are threshold problems,
+  descriptor problems, or patch geometry problems
 - compare whole-image supervised manifest runs against patch-scan anomaly runs
 - test OpenCV crop/background normalization before patch extraction
 
