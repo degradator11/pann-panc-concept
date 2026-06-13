@@ -40,10 +40,10 @@ struct ScannedImage {
     patches: Vec<ScoredPatch>,
 }
 
-struct PatchDatasetInput {
-    loaded: ImageManifestDataset,
-    dataset_config_path: Option<String>,
-    data_path: Option<String>,
+pub(super) struct PatchDatasetInput {
+    pub(super) loaded: ImageManifestDataset,
+    pub(super) dataset_config_path: Option<String>,
+    pub(super) data_path: Option<String>,
 }
 
 pub fn run_panc_patch_scan(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
@@ -53,7 +53,23 @@ pub fn run_panc_patch_scan(args: &Args) -> Result<CommandOutput, Box<dyn Error>>
         dataset_config_path,
         data_path,
     } = load_patch_dataset(args)?;
-    let normal_class = normal_class_name(&loaded)?;
+    Ok(CommandOutput::PatchScan(run_patch_scan_report(
+        &loaded,
+        dataset_config_path,
+        data_path,
+        None,
+        args,
+    )?))
+}
+
+pub(super) fn run_patch_scan_report(
+    loaded: &ImageManifestDataset,
+    dataset_config_path: Option<String>,
+    data_path: Option<String>,
+    eval_indexes: Option<&[usize]>,
+    args: &Args,
+) -> Result<PatchScanReport, Box<dyn Error>> {
+    let normal_class = normal_class_name(loaded)?;
     let normal_entries = loaded
         .train
         .entries
@@ -101,12 +117,17 @@ pub fn run_panc_patch_scan(args: &Args) -> Result<CommandOutput, Box<dyn Error>>
         .collect::<Vec<_>>();
     let anomaly_threshold = percentile(&calibration_scores, args.anomaly_threshold_quantile);
 
-    let eval_entries = loaded
+    let all_eval_entries = loaded
         .eval
         .as_ref()
         .ok_or("patch scan requires an eval split in the manifest or MVTec category")?
         .entries
         .clone();
+    let eval_entries = if let Some(eval_indexes) = eval_indexes {
+        collect_entries(&all_eval_entries, eval_indexes)
+    } else {
+        all_eval_entries
+    };
     let inference_start = Instant::now();
     let scans = eval_entries
         .iter()
@@ -166,7 +187,7 @@ pub fn run_panc_patch_scan(args: &Args) -> Result<CommandOutput, Box<dyn Error>>
         .map(|reference| reference.vector.len())
         .unwrap_or(0);
 
-    Ok(CommandOutput::PatchScan(PatchScanReport {
+    Ok(PatchScanReport {
         model: "panc_like_patch_scan".to_string(),
         dataset: loaded
             .name
@@ -180,6 +201,7 @@ pub fn run_panc_patch_scan(args: &Args) -> Result<CommandOutput, Box<dyn Error>>
         patch_stride: args.patch_stride,
         image_size: args.image_width,
         max_train_patches: args.max_train_patches,
+        patch_score_fraction: args.patch_score_fraction,
         reference_images: reference_entries.len(),
         calibration_images: calibration_entries.len(),
         reference_patches,
@@ -197,10 +219,10 @@ pub fn run_panc_patch_scan(args: &Args) -> Result<CommandOutput, Box<dyn Error>>
         memory_bytes: reference_patches * feature_len * std::mem::size_of::<f64>(),
         mask_iou_mean,
         results,
-    }))
+    })
 }
 
-fn load_patch_dataset(args: &Args) -> Result<PatchDatasetInput, Box<dyn Error>> {
+pub(super) fn load_patch_dataset(args: &Args) -> Result<PatchDatasetInput, Box<dyn Error>> {
     if let Some(path) = args.dataset_config_path.as_deref() {
         return Ok(PatchDatasetInput {
             loaded: load_image_manifest(path, image_config(args))?,
@@ -277,7 +299,7 @@ fn mvtec_manifest(category_root: &Path) -> Result<ImageDatasetManifest, Box<dyn 
     })
 }
 
-fn normal_class_name(loaded: &ImageManifestDataset) -> Result<String, Box<dyn Error>> {
+pub(super) fn normal_class_name(loaded: &ImageManifestDataset) -> Result<String, Box<dyn Error>> {
     for preferred in ["normal", "good"] {
         if loaded
             .train
@@ -370,7 +392,7 @@ fn scan_entry(
     }
 
     let max_patch_score = scores.iter().copied().max_by(f64::total_cmp).unwrap_or(0.0);
-    let mean_top_patch_score = mean_top_fraction(&scores, 0.10);
+    let mean_top_patch_score = mean_top_fraction(&scores, args.patch_score_fraction);
     let score = mean_top_patch_score;
 
     Ok(ScannedImage {
@@ -599,7 +621,7 @@ fn write_patch_debug(
     Ok(())
 }
 
-fn validate_patch_args(args: &Args) -> Result<(), Box<dyn Error>> {
+pub(super) fn validate_patch_args(args: &Args) -> Result<(), Box<dyn Error>> {
     if args.patch_size == 0 {
         return Err("--patch-size must be greater than zero".into());
     }
@@ -611,6 +633,9 @@ fn validate_patch_args(args: &Args) -> Result<(), Box<dyn Error>> {
     }
     if !(0.0..=1.0).contains(&args.anomaly_threshold_quantile) {
         return Err("--anomaly-threshold-quantile must be in 0..1".into());
+    }
+    if !(0.0..=1.0).contains(&args.patch_score_fraction) || args.patch_score_fraction == 0.0 {
+        return Err("--patch-score-fraction must be in 0..1 and greater than zero".into());
     }
     Ok(())
 }

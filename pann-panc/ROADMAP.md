@@ -84,6 +84,8 @@ not artifact persistence or simply running more epochs.
 - README dataset links and run instructions
 - MVTec-style normal-only industrial patch scanner, including optional mask IoU
   and per-image debug CSV output
+- Genetic search for industrial patch-scan recipes, with validation/holdout
+  split and reusable patch search artifacts
 
 ## Current Working Interpretation
 
@@ -196,6 +198,10 @@ Implemented additions:
 - automatic MVTec category detection when `--data` points at one category root
 - normal-patch reference library, held-out-good threshold calibration, anomaly
   scoring, image-level metrics, AUROC, and optional mask IoU
+- `evolve-panc-patch-scan` for searching patch-scan recipes
+- `panc-patch-scan --search-artifact ...` for reusing a searched patch recipe
+- tunable `--patch-score-fraction`, controlling how much of the suspicious
+  patch tail becomes the whole-image anomaly score
 
 Supervised manifest use case:
 
@@ -240,8 +246,45 @@ real anomaly ranking signal on `metal_nut` (AUROC about 0.80), but the current
 calibrated pass/fail threshold is too conservative and localization is still
 weak. This is an early anomaly baseline, not yet a production defect detector.
 
+First patch genetic-search smoke:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --out models\metal-nut-patch-search-smoke.json --report-out reports\metal-nut-patch-search-smoke.report.json --population 4 --generations 2 --threads 4 --evolve-image-sizes 16 --evolve-features rich-edge --evolve-patch-sizes 224 --evolve-patch-strides 224 --evolve-max-train-patches 128 --evolve-top-k 1 --evolve-threshold-quantiles 0.85,0.9 --evolve-patch-score-fractions 0.05,0.1 --memory-penalty-per-mb 0 --inference-penalty-per-ms 0 --format json
+```
+
+| Setting | Value |
+| --- | --- |
+| Runtime | about 20 seconds including release build |
+| Population / generations | 4 / 2 |
+| Validation accuracy / AUROC / F1 | 78.3% / 65.8% / 86.5% |
+| Holdout accuracy / AUROC / F1 | 65.2% / 63.7% / 75.8% |
+| Best recipe | `rich-edge`, 16px patch descriptor, 224px patch, 224px stride, 128 references, top-k 1, q=0.85, top 5% patches |
+
+Reuse smoke:
+
+```powershell
+cargo run --release --bin research-bench -- panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --search-artifact models\metal-nut-patch-search-smoke.json --report-out reports\metal-nut-patch-search-smoke-reuse.report.json --format json
+```
+
+| Metric | Value |
+| --- | ---: |
+| Full eval accuracy | 67.8% |
+| Normal accuracy | 54.5% |
+| Defect recall | 71.0% |
+| Full eval AUROC | 64.2% |
+| Mean mask IoU | 5.4% |
+
+Interpretation: the new GS plumbing works and artifacts are reusable, but the
+tiny smoke search is not a quality improvement over the earlier `rich-edge`
+manual setting. It pushed recall up by lowering the threshold, but introduced
+too many false positives and reduced AUROC. Real search should use more
+population/generations and a wider recipe space, then compare holdout AUROC
+against the current 79.6% manual baseline.
+
 Next industrial steps:
 
+- run a larger `evolve-panc-patch-scan` search against `metal_nut`, then repeat
+  on `bottle` and `screw`
 - tune anomaly thresholds beyond a fixed good-image percentile
 - sweep patch size/stride/features on bottle, metal_nut, and screw
 - write heatmap PNG debug artifacts, not only CSV rows

@@ -54,6 +54,7 @@ pub struct Args {
     pub patch_stride: u32,
     pub max_train_patches: usize,
     pub anomaly_threshold_quantile: f64,
+    pub patch_score_fraction: f64,
     pub evolution_population: usize,
     pub evolution_generations: usize,
     pub evolution_elite_count: usize,
@@ -64,6 +65,11 @@ pub struct Args {
     pub evolution_image_sizes: Vec<u32>,
     pub evolution_resize_modes: Vec<ImageResizeMode>,
     pub evolution_top_k_values: Vec<usize>,
+    pub evolution_patch_sizes: Vec<u32>,
+    pub evolution_patch_strides: Vec<u32>,
+    pub evolution_max_train_patches: Vec<usize>,
+    pub evolution_threshold_quantiles: Vec<f64>,
+    pub evolution_patch_score_fractions: Vec<f64>,
     pub evolution_memory_penalty_per_mb: f64,
     pub evolution_inference_penalty_per_ms: f64,
     pub config_report: Option<ConfigReport>,
@@ -99,7 +105,7 @@ impl DebugSamples {
     }
 }
 
-const USAGE: &str = "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-image-manifest|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-image-manifest|panc-patch-scan|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-image-manifest|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder|evolved-panc-image-folder> [--config path|--config.location=path] [--format json|csv] [--data path] [--eval-data path] [--dataset-config path] [--out path] [--report-out path] [--model path] [--image path] [--search-artifact path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--panc-threshold f] [--panc-jaccard-weight f] [--panc-active-blocks 0xffff] [--patch-size n] [--patch-stride n] [--max-train-patches n] [--anomaly-threshold-quantile f] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5]";
+const USAGE: &str = "usage: research-bench <pann-iris|pann-synthetic|pann-image-synthetic|pann-image-folder|pann-image-manifest|pann-embedding-csv|panc-iris|panc-synthetic|panc-image-synthetic|panc-image-folder|panc-image-manifest|panc-patch-scan|panc-embedding-csv|centroid-iris|centroid-synthetic|centroid-image-synthetic|centroid-image-folder|centroid-image-manifest|centroid-embedding-csv|train-pann-image-folder|train-panc-image-folder|eval-pann|eval-panc|predict-pann|predict-panc|image-matrix|pann-learning-curve|evolve-panc-image-folder|evolved-panc-image-folder|evolve-panc-patch-scan> [--config path|--config.location=path] [--format json|csv] [--data path] [--eval-data path] [--dataset-config path] [--out path] [--report-out path] [--model path] [--image path] [--search-artifact path] [--epochs n] [--intervals n] [--correction-mode difference-ls|patent-proportional|ratio] [--seed n] [--target-mse f] [--image-size n] [--image-features pixels|color|hog|combined|rich|rich-spatial|rich-normalized|rich-hog|rich-texture|rich-edge|rich-layout] [--image-resize stretch|center-crop|letterbox|foreground-crop] [--samples-per-class n] [--top-k n] [--panc-threshold f] [--panc-jaccard-weight f] [--panc-active-blocks 0xffff] [--patch-size n] [--patch-stride n] [--max-train-patches n] [--anomaly-threshold-quantile f] [--patch-score-fraction f] [--matrix-models pann,panc,centroid] [--matrix-features pixels,combined,rich,rich-spatial,rich-normalized,rich-hog,rich-texture,rich-edge,rich-layout] [--matrix-image-sizes 16,32] [--matrix-intervals 4,8] [--matrix-seeds 1,2,3] [--matrix-resize-modes stretch,letterbox,foreground-crop] [--matrix-correction-modes difference-ls,patent-proportional,ratio] [--matrix-top n] [--debug-out path] [--debug-train-data path] [--debug-limit n] [--debug-samples misclassified|all|correct] [--debug-neighbors n] [--population n] [--generations n] [--elite-count n] [--mutation-rate f] [--validation-ratio f] [--threads n] [--evolve-features rich,rich-texture] [--evolve-image-sizes 64,128] [--evolve-resize-modes center-crop,foreground-crop] [--evolve-top-k 1,3,5] [--evolve-patch-sizes 96,160,224] [--evolve-patch-strides 48,80,112] [--evolve-max-train-patches 256,512,1024] [--evolve-threshold-quantiles 0.85,0.9,0.95] [--evolve-patch-score-fractions 0.03,0.05,0.1]";
 
 pub fn parse_args() -> Result<Args, Box<dyn Error>> {
     parse_args_from(env::args().skip(1))
@@ -201,6 +207,7 @@ fn default_args(command: String) -> Args {
         patch_stride: 48,
         max_train_patches: 4096,
         anomaly_threshold_quantile: 0.95,
+        patch_score_fraction: 0.10,
         evolution_population: 32,
         evolution_generations: 20,
         evolution_elite_count: 4,
@@ -211,6 +218,11 @@ fn default_args(command: String) -> Args {
         evolution_image_sizes: Vec::new(),
         evolution_resize_modes: Vec::new(),
         evolution_top_k_values: Vec::new(),
+        evolution_patch_sizes: Vec::new(),
+        evolution_patch_strides: Vec::new(),
+        evolution_max_train_patches: Vec::new(),
+        evolution_threshold_quantiles: Vec::new(),
+        evolution_patch_score_fractions: Vec::new(),
         evolution_memory_penalty_per_mb: 0.0001,
         evolution_inference_penalty_per_ms: 0.00001,
         config_report: None,
@@ -426,6 +438,10 @@ fn apply_cli_flags(
                     next_value(raw, &mut index, flag)?.parse::<f64>()?;
                 set_source(sources, "anomaly_threshold_quantile", ConfigSource::Cli);
             }
+            "--patch-score-fraction" => {
+                args.patch_score_fraction = next_value(raw, &mut index, flag)?.parse::<f64>()?;
+                set_source(sources, "patch_score_fraction", ConfigSource::Cli);
+            }
             "--population" => {
                 args.evolution_population = next_value(raw, &mut index, flag)?.parse::<usize>()?;
                 set_source(sources, "evolution_population", ConfigSource::Cli);
@@ -470,6 +486,35 @@ fn apply_cli_flags(
                 args.evolution_top_k_values =
                     parse_number_list(&next_value(raw, &mut index, flag)?)?;
                 set_source(sources, "evolution_top_k_values", ConfigSource::Cli);
+            }
+            "--evolve-patch-sizes" => {
+                args.evolution_patch_sizes =
+                    parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_patch_sizes", ConfigSource::Cli);
+            }
+            "--evolve-patch-strides" => {
+                args.evolution_patch_strides =
+                    parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_patch_strides", ConfigSource::Cli);
+            }
+            "--evolve-max-train-patches" => {
+                args.evolution_max_train_patches =
+                    parse_number_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_max_train_patches", ConfigSource::Cli);
+            }
+            "--evolve-threshold-quantiles" => {
+                args.evolution_threshold_quantiles =
+                    parse_f64_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(sources, "evolution_threshold_quantiles", ConfigSource::Cli);
+            }
+            "--evolve-patch-score-fractions" => {
+                args.evolution_patch_score_fractions =
+                    parse_f64_list(&next_value(raw, &mut index, flag)?)?;
+                set_source(
+                    sources,
+                    "evolution_patch_score_fractions",
+                    ConfigSource::Cli,
+                );
             }
             "--memory-penalty-per-mb" => {
                 args.evolution_memory_penalty_per_mb =
@@ -635,6 +680,13 @@ fn split_csv_values(value: &str) -> Vec<&str> {
         .split(',')
         .map(str::trim)
         .filter(|part| !part.is_empty())
+        .collect()
+}
+
+pub(super) fn parse_f64_list(value: &str) -> Result<Vec<f64>, Box<dyn Error>> {
+    split_csv_values(value)
+        .into_iter()
+        .map(|value| value.parse::<f64>().map_err(Into::into))
         .collect()
 }
 

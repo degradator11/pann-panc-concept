@@ -29,6 +29,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         "pann-learning-curve" => learning_curve::run_pann_learning_curve(args),
         "evolve-panc-image-folder" => evolve::run_evolve_panc_image_folder(args),
         "evolved-panc-image-folder" => evolved_run::run_evolved_panc_image_folder(args),
+        "evolve-panc-patch-scan" => super::patch_evolve::run_evolve_panc_patch_scan(args),
         "pann-iris" => run_pann(load_iris(args.data_path.as_deref())?, "iris", args)
             .map(CommandOutput::Metrics),
         "pann-synthetic" => {
@@ -94,7 +95,7 @@ pub fn run(args: &Args) -> Result<CommandOutput, Box<dyn Error>> {
         )
         .map(CommandOutput::Metrics),
         command => Err(format!(
-            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, pann-image-manifest, pann-embedding-csv, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, panc-image-manifest, panc-patch-scan, panc-embedding-csv, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, centroid-image-manifest, centroid-embedding-csv, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, pann-learning-curve, evolve-panc-image-folder, or evolved-panc-image-folder"
+            "unknown command {command}; expected pann-iris, pann-synthetic, pann-image-synthetic, pann-image-folder, pann-image-manifest, pann-embedding-csv, panc-iris, panc-synthetic, panc-image-synthetic, panc-image-folder, panc-image-manifest, panc-patch-scan, panc-embedding-csv, centroid-iris, centroid-synthetic, centroid-image-synthetic, centroid-image-folder, centroid-image-manifest, centroid-embedding-csv, train-pann-image-folder, train-panc-image-folder, eval-pann, eval-panc, predict-pann, predict-panc, image-matrix, pann-learning-curve, evolve-panc-image-folder, evolved-panc-image-folder, or evolve-panc-patch-scan"
         )
         .into()),
     }

@@ -10,6 +10,7 @@ mod folder_commands;
 mod learning_curve;
 mod matrix;
 mod metrics;
+mod patch_evolve;
 mod patch_scan;
 mod run;
 
@@ -18,7 +19,10 @@ pub use args::{
     required_data_path, required_dataset_config_path, required_image_path, required_model_path,
     required_out_path,
 };
-pub use artifacts::{EvolvedPancSearchArtifact, save_evolved_search_artifact};
+pub use artifacts::{
+    EvolvedPancSearchArtifact, EvolvedPatchScanSearchArtifact,
+    save_evolved_patch_scan_search_artifact, save_evolved_search_artifact,
+};
 pub use config::print_config_report;
 pub use debug_report::{
     DebugReference, ImageEvalDebugData, ImageEvalPrediction, ResizePrediction,
@@ -28,8 +32,10 @@ pub use metrics::{
     ArtifactMetrics, BenchMetrics, ClassScore, CommandOutput, ConfusionRow, EvalMetrics,
     EvolutionGenerationRow, EvolutionReport, EvolvedPancGenomeReport, LearningCurveReport,
     LearningCurveRow, MatrixReport, MatrixRow, MatrixSummary, MisclassifiedExample,
-    PatchScanImageResult, PatchScanReport, PerClassAccuracy, PredictionNeighbor, PredictionOutput,
+    PatchScanEvolutionReport, PatchScanEvolutionRow, PatchScanImageResult, PatchScanRecipeReport,
+    PatchScanReport, PerClassAccuracy, PredictionNeighbor, PredictionOutput,
     classification_metrics, most_common_confusion, save_output_json, worst_class,
     write_evolution_history_csv, write_matrix_rows_csv, write_matrix_summaries_csv, write_output,
+    write_patch_evolution_history_csv,
 };
 pub use run::run;

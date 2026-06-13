@@ -232,6 +232,29 @@ category/
   ground_truth/<defect-type>/
 ```
 
+Patch score uses the mean of the most suspicious patch scores. The default is
+the top 10% of patches; tune it with `--patch-score-fraction`. Smaller values
+focus on tiny defects such as scratches, while larger values reward broad
+object-level damage.
+
+Search for a better patch-scan recipe with genetic search:
+
+```powershell
+cargo run --release --bin research-bench -- evolve-panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --out models\metal-nut-patch-search.json --report-out reports\metal-nut-patch-search-report.json --population 100 --generations 20 --threads 32 --evolve-image-sizes 16,24 --evolve-features rich-edge,rich-texture,rich-hog --evolve-patch-sizes 128,160,224 --evolve-patch-strides 64,80,112,160,224 --evolve-max-train-patches 256,512,1024 --evolve-top-k 1,3 --evolve-threshold-quantiles 0.8,0.85,0.9,0.95 --evolve-patch-score-fractions 0.03,0.05,0.1,0.2 --memory-penalty-per-mb 0 --inference-penalty-per-ms 0 --format json
+```
+
+Reuse the searched recipe in the normal scanner:
+
+```powershell
+cargo run --release --bin research-bench -- panc-patch-scan --data C:\Users\vilex\Downloads\industrial\metal_nut --search-artifact models\metal-nut-patch-search.json --report-out reports\metal-nut-patch-search-reuse-report.json --format json
+```
+
+The patch search artifact stores a recipe, not a trained patch library. Runtime
+still rebuilds the normal patch library from `train/good` and recalibrates the
+anomaly threshold from held-out normal images, then applies the searched
+preprocessing, patch, top-k, threshold-quantile, and patch-score-fraction
+settings.
+
 Long benchmark commands can be moved into a JSON config file. Defaults are
 loaded first, the config file overrides those defaults, and explicit CLI flags
 override the config. The config report is printed to stderr so JSON/CSV output
@@ -278,6 +301,8 @@ The benchmark tool now keeps three artifact types separate:
 
 - **Search artifact**: output from `evolve-panc-image-folder`. It stores the
   best PANC-like comparator recipe found by genetic search.
+- **Patch search artifact**: output from `evolve-panc-patch-scan`. It stores
+  the best industrial patch-scan recipe found by genetic search.
 - **Model artifact**: output from `train-pann-image-folder` or
   `train-panc-image-folder`. It stores a reusable trained image model.
 - **Run report artifact**: output from `--report-out`. It stores the JSON

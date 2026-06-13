@@ -7,11 +7,11 @@ use serde_json::Value;
 
 use super::args::{
     Args, MatrixModel, correction_mode_name, output_format_name, parse_active_blocks,
-    parse_correction_mode, parse_correction_modes_list, parse_debug_samples, parse_format,
-    parse_image_features_list, parse_image_resize_modes_list, parse_matrix_models,
+    parse_correction_mode, parse_correction_modes_list, parse_debug_samples, parse_f64_list,
+    parse_format, parse_image_features_list, parse_image_resize_modes_list, parse_matrix_models,
     parse_number_list,
 };
-use super::artifacts::load_evolved_search_artifact;
+use super::artifacts::{load_evolved_patch_scan_search_artifact, load_evolved_search_artifact};
 
 pub type SourceMap = HashMap<&'static str, ConfigSource>;
 
@@ -89,6 +89,7 @@ const REPORT_FIELDS: &[&str] = &[
     "patch_stride",
     "max_train_patches",
     "anomaly_threshold_quantile",
+    "patch_score_fraction",
     "evolution_population",
     "evolution_generations",
     "evolution_elite_count",
@@ -99,6 +100,11 @@ const REPORT_FIELDS: &[&str] = &[
     "evolution_image_sizes",
     "evolution_resize_modes",
     "evolution_top_k_values",
+    "evolution_patch_sizes",
+    "evolution_patch_strides",
+    "evolution_max_train_patches",
+    "evolution_threshold_quantiles",
+    "evolution_patch_score_fractions",
     "evolution_memory_penalty_per_mb",
     "evolution_inference_penalty_per_ms",
 ];
@@ -176,6 +182,8 @@ pub struct BenchConfig {
     patch_stride: Option<u32>,
     max_train_patches: Option<usize>,
     anomaly_threshold_quantile: Option<f64>,
+    #[serde(alias = "patch-score-fraction")]
+    patch_score_fraction: Option<f64>,
     #[serde(alias = "evolution_population")]
     population: Option<usize>,
     #[serde(alias = "evolution_generations")]
@@ -190,6 +198,16 @@ pub struct BenchConfig {
     evolve_image_sizes: Option<Value>,
     evolve_resize_modes: Option<Value>,
     evolve_top_k: Option<Value>,
+    #[serde(alias = "evolve-patch-sizes")]
+    evolve_patch_sizes: Option<Value>,
+    #[serde(alias = "evolve-patch-strides")]
+    evolve_patch_strides: Option<Value>,
+    #[serde(alias = "evolve-max-train-patches")]
+    evolve_max_train_patches: Option<Value>,
+    #[serde(alias = "evolve-threshold-quantiles")]
+    evolve_threshold_quantiles: Option<Value>,
+    #[serde(alias = "evolve-patch-score-fractions")]
+    evolve_patch_score_fractions: Option<Value>,
     memory_penalty_per_mb: Option<f64>,
     inference_penalty_per_ms: Option<f64>,
 }
@@ -492,6 +510,10 @@ pub fn apply_config(
         args.anomaly_threshold_quantile = value;
         set_source(sources, "anomaly_threshold_quantile", ConfigSource::Config);
     }
+    if let Some(value) = config.patch_score_fraction {
+        args.patch_score_fraction = value;
+        set_source(sources, "patch_score_fraction", ConfigSource::Config);
+    }
     if let Some(value) = config.population {
         args.evolution_population = value;
         set_source(sources, "evolution_population", ConfigSource::Config);
@@ -536,6 +558,39 @@ pub fn apply_config(
             parse_number_list(&config_value_as_csv(value, "evolve_top_k")?)?;
         set_source(sources, "evolution_top_k_values", ConfigSource::Config);
     }
+    if let Some(value) = &config.evolve_patch_sizes {
+        args.evolution_patch_sizes =
+            parse_number_list(&config_value_as_csv(value, "evolve_patch_sizes")?)?;
+        set_source(sources, "evolution_patch_sizes", ConfigSource::Config);
+    }
+    if let Some(value) = &config.evolve_patch_strides {
+        args.evolution_patch_strides =
+            parse_number_list(&config_value_as_csv(value, "evolve_patch_strides")?)?;
+        set_source(sources, "evolution_patch_strides", ConfigSource::Config);
+    }
+    if let Some(value) = &config.evolve_max_train_patches {
+        args.evolution_max_train_patches =
+            parse_number_list(&config_value_as_csv(value, "evolve_max_train_patches")?)?;
+        set_source(sources, "evolution_max_train_patches", ConfigSource::Config);
+    }
+    if let Some(value) = &config.evolve_threshold_quantiles {
+        args.evolution_threshold_quantiles =
+            parse_f64_list(&config_value_as_csv(value, "evolve_threshold_quantiles")?)?;
+        set_source(
+            sources,
+            "evolution_threshold_quantiles",
+            ConfigSource::Config,
+        );
+    }
+    if let Some(value) = &config.evolve_patch_score_fractions {
+        args.evolution_patch_score_fractions =
+            parse_f64_list(&config_value_as_csv(value, "evolve_patch_score_fractions")?)?;
+        set_source(
+            sources,
+            "evolution_patch_score_fractions",
+            ConfigSource::Config,
+        );
+    }
     if let Some(value) = config.memory_penalty_per_mb {
         args.evolution_memory_penalty_per_mb = value;
         set_source(
@@ -561,6 +616,41 @@ pub fn apply_search_artifact(
     path: &str,
     sources: &mut SourceMap,
 ) -> Result<(), Box<dyn Error>> {
+    if let Ok(artifact) = load_evolved_patch_scan_search_artifact(path) {
+        let recipe = artifact.best_recipe;
+        args.image_width = recipe.image_size;
+        args.image_height = recipe.image_size;
+        args.image_features = recipe.image_features.parse().map_err(|source| {
+            format!("invalid image_features in patch search artifact: {source}")
+        })?;
+        args.image_resize = recipe
+            .image_resize
+            .parse()
+            .map_err(|source| format!("invalid image_resize in patch search artifact: {source}"))?;
+        args.patch_size = recipe.patch_size;
+        args.patch_stride = recipe.patch_stride;
+        args.max_train_patches = recipe.max_train_patches;
+        args.top_k = recipe.top_k.max(1);
+        args.anomaly_threshold_quantile = recipe.threshold_quantile;
+        args.patch_score_fraction = recipe.patch_score_fraction;
+
+        for field in [
+            "image_width",
+            "image_height",
+            "image_features",
+            "image_resize",
+            "patch_size",
+            "patch_stride",
+            "max_train_patches",
+            "top_k",
+            "anomaly_threshold_quantile",
+            "patch_score_fraction",
+        ] {
+            set_source(sources, field, ConfigSource::Search);
+        }
+        return Ok(());
+    }
+
     let artifact = load_evolved_search_artifact(path)?;
     let genome = artifact.best_genome;
     args.image_width = genome.image_size;
@@ -684,6 +774,7 @@ fn config_report_value(args: &Args, field: &str) -> String {
         "patch_stride" => args.patch_stride.to_string(),
         "max_train_patches" => args.max_train_patches.to_string(),
         "anomaly_threshold_quantile" => args.anomaly_threshold_quantile.to_string(),
+        "patch_score_fraction" => args.patch_score_fraction.to_string(),
         "evolution_population" => args.evolution_population.to_string(),
         "evolution_generations" => args.evolution_generations.to_string(),
         "evolution_elite_count" => args.evolution_elite_count.to_string(),
@@ -707,6 +798,31 @@ fn config_report_value(args: &Args, field: &str) -> String {
         ),
         "evolution_top_k_values" => list_string(
             args.evolution_top_k_values
+                .iter()
+                .map(|value| value.to_string()),
+        ),
+        "evolution_patch_sizes" => list_string(
+            args.evolution_patch_sizes
+                .iter()
+                .map(|value| value.to_string()),
+        ),
+        "evolution_patch_strides" => list_string(
+            args.evolution_patch_strides
+                .iter()
+                .map(|value| value.to_string()),
+        ),
+        "evolution_max_train_patches" => list_string(
+            args.evolution_max_train_patches
+                .iter()
+                .map(|value| value.to_string()),
+        ),
+        "evolution_threshold_quantiles" => list_string(
+            args.evolution_threshold_quantiles
+                .iter()
+                .map(|value| value.to_string()),
+        ),
+        "evolution_patch_score_fractions" => list_string(
+            args.evolution_patch_score_fractions
                 .iter()
                 .map(|value| value.to_string()),
         ),

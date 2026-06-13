@@ -10,6 +10,7 @@
   "patch_size": 224,
   "patch_stride": 224,
   "max_train_patches": 512,
+  "patch_score_fraction": 0.1,
   "top_k": 1,
   "anomaly_threshold_quantile": 0.95,
   "seed": 42

@@ -17,6 +17,7 @@ pub enum CommandOutput {
     LearningCurve(LearningCurveReport),
     Evolution(EvolutionReport),
     PatchScan(PatchScanReport),
+    PatchEvolution(PatchScanEvolutionReport),
 }
 
 #[derive(Debug, Serialize)]
@@ -261,6 +262,65 @@ pub struct EvolutionGenerationRow {
 }
 
 #[derive(Debug, Serialize)]
+pub struct PatchScanEvolutionReport {
+    pub model: String,
+    pub dataset: String,
+    pub artifact_path: Option<String>,
+    pub history_path: Option<String>,
+    pub seed: u64,
+    pub population_size: usize,
+    pub generations: usize,
+    pub elite_count: usize,
+    pub mutation_rate: f64,
+    pub validation_ratio: f64,
+    pub threads: usize,
+    pub hardware_note: String,
+    pub best_recipe: PatchScanRecipeReport,
+    pub best_fitness: f64,
+    pub validation_accuracy: f64,
+    pub validation_auroc: f64,
+    pub validation_f1: f64,
+    pub holdout_accuracy: f64,
+    pub holdout_auroc: f64,
+    pub holdout_f1: f64,
+    pub rows: Vec<PatchScanEvolutionRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PatchScanRecipeReport {
+    pub image_size: u32,
+    pub image_features: String,
+    pub image_resize: String,
+    pub patch_size: u32,
+    pub patch_stride: u32,
+    pub max_train_patches: usize,
+    pub top_k: usize,
+    pub threshold_quantile: f64,
+    pub patch_score_fraction: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PatchScanEvolutionRow {
+    pub generation: usize,
+    pub best_fitness: f64,
+    pub validation_accuracy: f64,
+    pub validation_auroc: f64,
+    pub validation_f1: f64,
+    pub train_ms: u128,
+    pub inference_ms: u128,
+    pub memory_bytes: usize,
+    pub image_size: u32,
+    pub image_features: String,
+    pub image_resize: String,
+    pub patch_size: u32,
+    pub patch_stride: u32,
+    pub max_train_patches: usize,
+    pub top_k: usize,
+    pub threshold_quantile: f64,
+    pub patch_score_fraction: f64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct PatchScanReport {
     pub model: String,
     pub dataset: String,
@@ -272,6 +332,7 @@ pub struct PatchScanReport {
     pub patch_stride: u32,
     pub image_size: u32,
     pub max_train_patches: usize,
+    pub patch_score_fraction: f64,
     pub reference_images: usize,
     pub calibration_images: usize,
     pub reference_patches: usize,
@@ -482,6 +543,12 @@ pub fn write_output(output: &CommandOutput, format: OutputFormat) -> Result<(), 
         (CommandOutput::PatchScan(report), OutputFormat::Csv) => {
             write_patch_scan_results_csv(std::io::stdout(), &report.results)?;
         }
+        (CommandOutput::PatchEvolution(report), OutputFormat::Json) => {
+            println!("{}", serde_json::to_string_pretty(report)?);
+        }
+        (CommandOutput::PatchEvolution(report), OutputFormat::Csv) => {
+            write_patch_evolution_history_csv(std::io::stdout(), &report.rows)?;
+        }
     }
     Ok(())
 }
@@ -505,6 +572,7 @@ pub fn save_output_json(
         CommandOutput::LearningCurve(report) => serde_json::to_string_pretty(report)?,
         CommandOutput::Evolution(report) => serde_json::to_string_pretty(report)?,
         CommandOutput::PatchScan(report) => serde_json::to_string_pretty(report)?,
+        CommandOutput::PatchEvolution(report) => serde_json::to_string_pretty(report)?,
     };
     fs::write(path, json)?;
     Ok(())
@@ -549,6 +617,18 @@ pub fn write_evolution_history_csv<W: Write>(
 pub fn write_patch_scan_results_csv<W: Write>(
     writer: W,
     rows: &[PatchScanImageResult],
+) -> Result<(), Box<dyn Error>> {
+    let mut writer = csv::Writer::from_writer(writer);
+    for row in rows {
+        writer.serialize(row)?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
+pub fn write_patch_evolution_history_csv<W: Write>(
+    writer: W,
+    rows: &[PatchScanEvolutionRow],
 ) -> Result<(), Box<dyn Error>> {
     let mut writer = csv::Writer::from_writer(writer);
     for row in rows {

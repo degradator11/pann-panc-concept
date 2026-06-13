@@ -1,0 +1,23 @@
+{
+  "command": "evolve-panc-patch-scan",
+  "data": "C:/datasets/industrial/metal_nut",
+  "format": "json",
+  "out": "models/metal-nut-patch-search.json",
+  "report_out": "reports/metal-nut-patch-search-report.json",
+  "population": 100,
+  "generations": 20,
+  "threads": 32,
+  "validation_ratio": 0.2,
+  "seed": 42,
+  "evolve_image_sizes": [16, 24],
+  "evolve_features": ["rich-edge", "rich-texture", "rich-hog"],
+  "evolve_resize_modes": ["stretch"],
+  "evolve_patch_sizes": [128, 160, 224],
+  "evolve_patch_strides": [64, 80, 112, 160, 224],
+  "evolve_max_train_patches": [256, 512, 1024],
+  "evolve_top_k": [1, 3],
+  "evolve_threshold_quantiles": [0.8, 0.85, 0.9, 0.95],
+  "evolve_patch_score_fractions": [0.03, 0.05, 0.1, 0.2],
+  "memory_penalty_per_mb": 0.0,
+  "inference_penalty_per_ms": 0.0
+}
